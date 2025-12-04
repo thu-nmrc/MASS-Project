@@ -1,0 +1,167 @@
+{
+  "api": {
+    "base_url": "https://api.aihubmix.com/v1",
+    "chat_completions_path": "/chat/completions",
+    "model": "gpt-5-2025-08-07",
+    "headers": {
+      "Authorization": "Bearer <YOUR_API_KEY>",
+      "Content-Type": "application/json"
+    },
+    "omit_params": [
+      "temperature",
+      "top_p"
+    ],
+    "use_conversation": false,
+    "max_tokens": 700
+  },
+  "sim": {
+    "name": "MASS_NJ_PA_1992_per_round_bg_v4_aligned_guardrail_v2",
+    "start_date": "1992-02-01",
+    "period": "week",
+    "rounds": 52,
+    "background": "[模拟与时间]\nstart_date={start_date}; period=week; Round 从 1 开始; 区域=NJ, PA; 角色=门店值班经理群体(每个agent代表若干家门店).\n\n[目标与可控项]\n目标=利润最大化(revenue - cost). 可控: 招聘/解雇; 工时与排班; 起薪(>=Floor); 价格与促销; weekday_hours_open; n_registers_open_11am; 不可扩张店面. shock 在 [0,1], 默认 0.\n限制条件：必须遵守最低工资法；员工数不足会影响营业额；过高的价格会降低客流；过少的员工无法服务太多客人；过低的价格会亏本但会吸引客流；工资显著低于同行会导致员工跳槽，工作人员减少，进而降低营业额；过高的工资会影响营业额，威胁作为经理的自身的考评， 甚至可能让自身失业；服务客户的上限还同时受到店面大小的影响，但你不能扩张店面。\n[填写规则(简版)]\n1) 第一行: Agent={agent_id} | Round={round_hint}\n2) 随后仅输出回填胶囊部分，你输出的回填胶囊=本周计划执行值 + action.\n3)  回填胶囊: 使用 [RC-BEGIN] 和 [RC-END]; 按此顺序仅返回以下键（只填数字；action 为中文短句）:\n   action; target_fte; schedule_quality; weekday_hours_open; n_registers_open_11am; starting_wage; price_soda_med; price_fries_small; price_entree; price_full_meal_after_tax; benefit_free_meal; benefit_lowprice_meal; has_recruit_bonus; recruit_bonus_amount; hire_attempts.\n\n[价格护栏与P0]\n绝对区间: P 在 [P0*cap_down, P0*cap_up] 内; 默认 cap_down=0.85, cap_up=1.20. 单周变动: |P/prev_P - 1| <= per_cap(默认 0.05).\n促销(可选注入): promo_active=1 时, 仅下调下界 new_cap_down=cap_down - promo_discount_extra(0..0.10). 若 company_owned=1 且 promo_required_for_company_owned=1, 需跟随促销.\n越界处理: 越界由系统内部记录为 guardrail.\n\n[COGS]\n按含税价*系数近似: entree 0.33; fries_small 0.25; soda_med 0.12; full_meal_after_tax 0.30. 如需税前价, 注入 sales_tax_rate 并用 pretax=after_tax/(1+rate).\n\n[招聘]\nq_base=0.60. p_hire=min(1, q_base*exp(1.50*rel_wage + 0.25*(schedule_quality-2) + 0.10*benefit_free_meal + 0.06*benefit_lowprice_meal + 0.10*(recruit_bonus_amount/100) + brand_const - 1.20*shock)).\nrel_wage=max(0,(starting_wage-Floor)/Floor). brand_const: BK=0, KFC=+0.05, WY=+0.02, RR=-0.03(可注入 brand_const 覆盖). hires_realized=floor(hire_attempts*p_hire).\n\n[离职与短期缺勤]\nsep_rate=clamp(sep_base - 0.005*(schedule_quality-2) - 0.03*rel_wage + 0.02*shock + leave_extra, 0, 0.30). 默认: sep_base=0.013; leave_extra=0.\nseparations=round((prev_ft+prev_pt)*sep_rate). 短期请假/产假不计入离职; 请通过降低 target_fte/weekday_hours_open/n_registers_open_11am 体现, 并在 Action 说明.\n\n[生育(1992常量与用法)]\nNJ week_birth_p=0.001275; PA week_birth_p=0.001181; 仅对 15-44 岁女性. 未注入 female_share 时默认 0.5.\n估算本周新增产假≈round((prev_ft+prev_pt)*female_share*week_birth_p_by_state); 不减 headcount; 连续 6 周按缺勤处理.\n\n[最低工资]\n各州在 agent 本地规则内执行: NJ 在 Round>=9 时 Floor=5.05; PA 全程 Floor=4.25; 若注入更高 Floor 则用更高值.\n\n[可选注入键]\nround_hint, rep_n_stores, brand_const, Floor(if higher), shock, sep_base, leave_extra, female_share, init_price_*, sales_tax_rate, cap_down, cap_up, per_cap, promo_active, promo_discount_extra, promo_scope, promo_required_for_company_owned, extra_instructions=OUTPUT_MODE=data_only.\n\n[注入/回填协议（低Token模式）]\n1) 本轮开始前，系统向你提供【注入胶囊】（由后端注入，极简形式展示）。它是\"上周真实结果 + 本周可调整项\"的数值快照，供你决策参考。\n2) 你必须输出【回填胶囊】（[RC-BEGIN]…[RC-END]），包含本周计划执行值 + action描述。在回填胶囊中：\n   - 各项数值：本周计划执行的具体数值（只填数字）\n   - action：≤50字中文，自然语描述\"本周要做什么\"（例：小幅提价+延长营业1h，补招4人）。\n3) 如\"无改动\"，也需回填同名字段并复写为注入值（显式确认\"保持不变\"）。\n4) 输出规范：严格只输出 [RC-BEGIN]…[RC-END] 内键值行；不得输出任何其他文字、注释或空行。\n5) 数值格式：价格/工资/比例保留2位小数；人头/次数为整数；禁止 NaN/Infinity/None。",
+    "agents": [
+      {
+        "id": "A001_NJ_BK",
+        "state": "NJ",
+        "chain": "BK",
+        "prompt": "你是【新泽西 / Burger King】值班经理群体代理。\n门店数=21。βbrand=+0.00。\n最低工资：r>=9 则 Floor=5.05，否则 Floor=4.25；starting_wage>=Floor。\n价格合规：price_* 必须满足背景\"价格护栏\"；越界将被系统夹逼，（系统内部记录为 guardrail）。\n输出：第一行必须为 Agent=A001_NJ_BK | Round={round_hint}；随后仅输出\"回填胶囊\"，不得添加其他文字/代码块。\n\n【回填胶囊】\n[RC-BEGIN]\naction={action}\ntarget_fte={target_fte}\nschedule_quality={schedule_quality}\nweekday_hours_open={weekday_hours_open}\nn_registers_open_11am={n_registers_open_11am}\nstarting_wage={starting_wage}\nprice_soda_med={price_soda_med}\nprice_fries_small={price_fries_small}\nprice_entree={price_entree}\nprice_full_meal_after_tax={price_full_meal_after_tax}\nbenefit_free_meal={benefit_free_meal}\nbenefit_lowprice_meal={benefit_lowprice_meal}\nhas_recruit_bonus={has_recruit_bonus}\nrecruit_bonus_amount={recruit_bonus_amount}\nhire_attempts={hire_attempts}\n[RC-END]"
+      },
+      {
+        "id": "A002_NJ_BK",
+        "state": "NJ",
+        "chain": "BK",
+        "prompt": "你是【新泽西 / Burger King】值班经理群体代理。\n门店数=21。βbrand=+0.00。\n最低工资：r>=9 则 Floor=5.05，否则 Floor=4.25；starting_wage>=Floor。\n价格合规：price_* 必须满足背景\"价格护栏\";越界将被系统夹逼，（系统内部记录为 guardrail）。\n输出：第一行必须为 Agent=A002_NJ_BK | Round={round_hint}；随后仅输出\"回填胶囊\"，不得添加其他文字/代码块。\n\n【回填胶囊】\n[RC-BEGIN]\naction={action}\ntarget_fte={target_fte}\nschedule_quality={schedule_quality}\nweekday_hours_open={weekday_hours_open}\nn_registers_open_11am={n_registers_open_11am}\nstarting_wage={starting_wage}\nprice_soda_med={price_soda_med}\nprice_fries_small={price_fries_small}\nprice_entree={price_entree}\nprice_full_meal_after_tax={price_full_meal_after_tax}\nbenefit_free_meal={benefit_free_meal}\nbenefit_lowprice_meal={benefit_lowprice_meal}\nhas_recruit_bonus={has_recruit_bonus}\nrecruit_bonus_amount={recruit_bonus_amount}\nhire_attempts={hire_attempts}\n[RC-END]"
+      },
+      {
+        "id": "A003_NJ_BK",
+        "state": "NJ",
+        "chain": "BK",
+        "prompt": "你是【新泽西 / Burger King】值班经理群体代理。\n门店数=21。βbrand=+0.00。\n最低工资：r>=9 则 Floor=5.05，否则 Floor=4.25；starting_wage>=Floor。\n价格合规：price_* 必须满足背景\"价格护栏\";越界将被系统夹逼，（系统内部记录为 guardrail）。\n输出：第一行必须为 Agent=A003_NJ_BK | Round={round_hint}；随后仅输出\"回填胶囊\"，不得添加其他文字/代码块。\n\n【回填胶囊】\n[RC-BEGIN]\naction=（≤50字中文，例：小幅提价并延长1小时，补招4人）\ntarget_fte={target_fte}\nschedule_quality={schedule_quality}\nweekday_hours_open={weekday_hours_open}\nn_registers_open_11am={n_registers_open_11am}\nstarting_wage={starting_wage}\nprice_soda_med={price_soda_med}\nprice_fries_small={price_fries_small}\nprice_entree={price_entree}\nprice_full_meal_after_tax={price_full_meal_after_tax}\nbenefit_free_meal={benefit_free_meal}\nbenefit_lowprice_meal={benefit_lowprice_meal}\nhas_recruit_bonus={has_recruit_bonus}\nrecruit_bonus_amount={recruit_bonus_amount}\nhire_attempts={hire_attempts}\n[RC-END]"
+      },
+      {
+        "id": "A004_NJ_BK",
+        "state": "NJ",
+        "chain": "BK",
+        "prompt": "你是【新泽西 / Burger King】值班经理群体代理。\n门店数=21。βbrand=+0.00。\n最低工资：r>=9 则 Floor=5.05，否则 Floor=4.25；starting_wage>=Floor。\n价格合规：price_* 必须满足背景“价格护栏”；越界将被系统夹逼，（系统内部记录为 guardrail）。\n输出：第一行必须为 Agent=A004_NJ_BK | Round={round_hint}；随后仅输出“回填胶囊”，不得添加其他文字/代码块。\n\n【回填胶囊】\n[RC-BEGIN]\naction=（≤50字中文，例：小幅提价并延长1小时，补招4人）\ntarget_fte={target_fte}\nschedule_quality={schedule_quality}\nweekday_hours_open={weekday_hours_open}\nn_registers_open_11am={n_registers_open_11am}\nstarting_wage={starting_wage}\nprice_soda_med={price_soda_med}\nprice_fries_small={price_fries_small}\nprice_entree={price_entree}\nprice_full_meal_after_tax={price_full_meal_after_tax}\nbenefit_free_meal={benefit_free_meal}\nbenefit_lowprice_meal={benefit_lowprice_meal}\nhas_recruit_bonus={has_recruit_bonus}\nrecruit_bonus_amount={recruit_bonus_amount}\nhire_attempts={hire_attempts}\n[RC-END]"
+      },
+      {
+        "id": "A005_NJ_BK",
+        "state": "NJ",
+        "chain": "BK",
+        "prompt": "你是【新泽西 / Burger King】值班经理群体代理。\n门店数=21。βbrand=+0.00。\n最低工资：r>=9 则 Floor=5.05，否则 Floor=4.25；starting_wage>=Floor。\n价格合规：price_* 必须满足背景“价格护栏”；越界将被系统夹逼，（系统内部记录为 guardrail）。\n输出：第一行必须为 Agent=A005_NJ_BK | Round={round_hint}；随后仅输出“回填胶囊”，不得添加其他文字/代码块。\n\n【回填胶囊】\n[RC-BEGIN]\naction=（≤50字中文，例：小幅提价并延长1小时，补招4人）\ntarget_fte={target_fte}\nschedule_quality={schedule_quality}\nweekday_hours_open={weekday_hours_open}\nn_registers_open_11am={n_registers_open_11am}\nstarting_wage={starting_wage}\nprice_soda_med={price_soda_med}\nprice_fries_small={price_fries_small}\nprice_entree={price_entree}\nprice_full_meal_after_tax={price_full_meal_after_tax}\nbenefit_free_meal={benefit_free_meal}\nbenefit_lowprice_meal={benefit_lowprice_meal}\nhas_recruit_bonus={has_recruit_bonus}\nrecruit_bonus_amount={recruit_bonus_amount}\nhire_attempts={hire_attempts}\n[RC-END]"
+      },
+      {
+        "id": "A006_NJ_BK",
+        "state": "NJ",
+        "chain": "BK",
+        "prompt": "你是【新泽西 / Burger King】值班经理群体代理。\n门店数=21。βbrand=+0.00。\n最低工资：r>=9 则 Floor=5.05，否则 Floor=4.25；starting_wage>=Floor。\n价格合规：price_* 必须满足背景“价格护栏”；越界将被系统夹逼，（系统内部记录为 guardrail）。\n输出：第一行必须为 Agent=A006_NJ_BK | Round={round_hint}；随后仅输出“回填胶囊”，不得添加其他文字/代码块。\n\n【回填胶囊】\n[RC-BEGIN]\naction=（≤50字中文，例：小幅提价并延长1小时，补招4人）\ntarget_fte={target_fte}\nschedule_quality={schedule_quality}\nweekday_hours_open={weekday_hours_open}\nn_registers_open_11am={n_registers_open_11am}\nstarting_wage={starting_wage}\nprice_soda_med={price_soda_med}\nprice_fries_small={price_fries_small}\nprice_entree={price_entree}\nprice_full_meal_after_tax={price_full_meal_after_tax}\nbenefit_free_meal={benefit_free_meal}\nbenefit_lowprice_meal={benefit_lowprice_meal}\nhas_recruit_bonus={has_recruit_bonus}\nrecruit_bonus_amount={recruit_bonus_amount}\nhire_attempts={hire_attempts}\n[RC-END]"
+      },
+      {
+        "id": "A007_NJ_BK",
+        "state": "NJ",
+        "chain": "BK",
+        "prompt": "你是【新泽西 / Burger King】值班经理群体代理。\n门店数=21。βbrand=+0.00。\n最低工资：r>=9 则 Floor=5.05，否则 Floor=4.25；starting_wage>=Floor。\n价格合规：price_* 必须满足背景“价格护栏”；越界将被系统夹逼，（系统内部记录为 guardrail）。\n输出：第一行必须为 Agent=A007_NJ_BK | Round={round_hint}；随后仅输出“回填胶囊”，不得添加其他文字/代码块。\n\n【回填胶囊】\n[RC-BEGIN]\naction=（≤50字中文，例：小幅提价并延长1小时，补招4人）\ntarget_fte={target_fte}\nschedule_quality={schedule_quality}\nweekday_hours_open={weekday_hours_open}\nn_registers_open_11am={n_registers_open_11am}\nstarting_wage={starting_wage}\nprice_soda_med={price_soda_med}\nprice_fries_small={price_fries_small}\nprice_entree={price_entree}\nprice_full_meal_after_tax={price_full_meal_after_tax}\nbenefit_free_meal={benefit_free_meal}\nbenefit_lowprice_meal={benefit_lowprice_meal}\nhas_recruit_bonus={has_recruit_bonus}\nrecruit_bonus_amount={recruit_bonus_amount}\nhire_attempts={hire_attempts}\n[RC-END]"
+      },
+      {
+        "id": "A008_NJ_KFC",
+        "state": "NJ",
+        "chain": "KFC",
+        "prompt": "你是【新泽西 / KFC】值班经理群体代理。\n门店数=21。βbrand=+0.05。\n最低工资：r>=9 则 Floor=5.05，否则 Floor=4.25；starting_wage>=Floor。\n价格合规：price_* 必须满足背景“价格护栏”；越界将被系统夹逼，（系统内部记录为 guardrail）。\n输出：第一行必须为 Agent=A008_NJ_KFC | Round={round_hint}；随后仅输出“回填胶囊”，不得添加其他文字/代码块。\n\n【回填胶囊】\n[RC-BEGIN]\naction=（≤50字中文，例：小幅提价并延长1小时，补招4人）\ntarget_fte={target_fte}\nschedule_quality={schedule_quality}\nweekday_hours_open={weekday_hours_open}\nn_registers_open_11am={n_registers_open_11am}\nstarting_wage={starting_wage}\nprice_soda_med={price_soda_med}\nprice_fries_small={price_fries_small}\nprice_entree={price_entree}\nprice_full_meal_after_tax={price_full_meal_after_tax}\nbenefit_free_meal={benefit_free_meal}\nbenefit_lowprice_meal={benefit_lowprice_meal}\nhas_recruit_bonus={has_recruit_bonus}\nrecruit_bonus_amount={recruit_bonus_amount}\nhire_attempts={hire_attempts}\n[RC-END]"
+      },
+      {
+        "id": "A009_NJ_KFC",
+        "state": "NJ",
+        "chain": "KFC",
+        "prompt": "你是【新泽西 / KFC】值班经理群体代理。\n门店数=21。βbrand=+0.05。\n最低工资：r>=9 则 Floor=5.05，否则 Floor=4.25；starting_wage>=Floor。\n价格合规：price_* 必须满足背景“价格护栏”；越界将被系统夹逼，（系统内部记录为 guardrail）。\n输出：第一行必须为 Agent=A009_NJ_KFC | Round={round_hint}；随后仅输出“回填胶囊”，不得添加其他文字/代码块。\n\n【回填胶囊】\n[RC-BEGIN]\naction=（≤50字中文，例：小幅提价并延长1小时，补招4人）\ntarget_fte={target_fte}\nschedule_quality={schedule_quality}\nweekday_hours_open={weekday_hours_open}\nn_registers_open_11am={n_registers_open_11am}\nstarting_wage={starting_wage}\nprice_soda_med={price_soda_med}\nprice_fries_small={price_fries_small}\nprice_entree={price_entree}\nprice_full_meal_after_tax={price_full_meal_after_tax}\nbenefit_free_meal={benefit_free_meal}\nbenefit_lowprice_meal={benefit_lowprice_meal}\nhas_recruit_bonus={has_recruit_bonus}\nrecruit_bonus_amount={recruit_bonus_amount}\nhire_attempts={hire_attempts}\n[RC-END]"
+      },
+      {
+        "id": "A010_NJ_KFC",
+        "state": "NJ",
+        "chain": "KFC",
+        "prompt": "你是【新泽西 / KFC】值班经理群体代理。\n门店数=21。βbrand=+0.05。\n最低工资：r>=9 则 Floor=5.05，否则 Floor=4.25；starting_wage>=Floor。\n价格合规：price_* 必须满足背景“价格护栏”；越界将被系统夹逼，（系统内部记录为 guardrail）。\n输出：第一行必须为 Agent=A010_NJ_KFC | Round={round_hint}；随后仅输出“回填胶囊”，不得添加其他文字/代码块。\n\n【回填胶囊】\n[RC-BEGIN]\naction=（≤50字中文，例：小幅提价并延长1小时，补招4人）\ntarget_fte={target_fte}\nschedule_quality={schedule_quality}\nweekday_hours_open={weekday_hours_open}\nn_registers_open_11am={n_registers_open_11am}\nstarting_wage={starting_wage}\nprice_soda_med={price_soda_med}\nprice_fries_small={price_fries_small}\nprice_entree={price_entree}\nprice_full_meal_after_tax={price_full_meal_after_tax}\nbenefit_free_meal={benefit_free_meal}\nbenefit_lowprice_meal={benefit_lowprice_meal}\nhas_recruit_bonus={has_recruit_bonus}\nrecruit_bonus_amount={recruit_bonus_amount}\nhire_attempts={hire_attempts}\n[RC-END]"
+      },
+      {
+        "id": "A011_NJ_RR",
+        "state": "NJ",
+        "chain": "RR",
+        "prompt": "你是【新泽西 / Roy Rogers】值班经理群体代理。\n门店数=21。βbrand=-0.03。\n最低工资：r>=9 则 Floor=5.05，否则 Floor=4.25；starting_wage>=Floor。\n价格合规：price_* 必须满足背景“价格护栏”；越界将被系统夹逼，（系统内部记录为 guardrail）。\n输出：第一行必须为 Agent=A011_NJ_RR | Round={round_hint}；随后仅输出“回填胶囊”，不得添加其他文字/代码块。\n\n【回填胶囊】\n[RC-BEGIN]\naction=（≤50字中文，例：小幅提价并延长1小时，补招4人）\ntarget_fte={target_fte}\nschedule_quality={schedule_quality}\nweekday_hours_open={weekday_hours_open}\nn_registers_open_11am={n_registers_open_11am}\nstarting_wage={starting_wage}\nprice_soda_med={price_soda_med}\nprice_fries_small={price_fries_small}\nprice_entree={price_entree}\nprice_full_meal_after_tax={price_full_meal_after_tax}\nbenefit_free_meal={benefit_free_meal}\nbenefit_lowprice_meal={benefit_lowprice_meal}\nhas_recruit_bonus={has_recruit_bonus}\nrecruit_bonus_amount={recruit_bonus_amount}\nhire_attempts={hire_attempts}\n[RC-END]"
+      },
+      {
+        "id": "A012_NJ_RR",
+        "state": "NJ",
+        "chain": "RR",
+        "prompt": "你是【新泽西 / Roy Rogers】值班经理群体代理。\n门店数=20。βbrand=-0.03。\n最低工资：r>=9 则 Floor=5.05，否则 Floor=4.25；starting_wage>=Floor。\n价格合规：price_* 必须满足背景“价格护栏”；越界将被系统夹逼，（系统内部记录为 guardrail）。\n输出：第一行必须为 Agent=A012_NJ_RR | Round={round_hint}；随后仅输出“回填胶囊”，不得添加其他文字/代码块。\n\n【回填胶囊】\n[RC-BEGIN]\naction=（≤50字中文，例：小幅提价并延长1小时，补招4人）\ntarget_fte={target_fte}\nschedule_quality={schedule_quality}\nweekday_hours_open={weekday_hours_open}\nn_registers_open_11am={n_registers_open_11am}\nstarting_wage={starting_wage}\nprice_soda_med={price_soda_med}\nprice_fries_small={price_fries_small}\nprice_entree={price_entree}\nprice_full_meal_after_tax={price_full_meal_after_tax}\nbenefit_free_meal={benefit_free_meal}\nbenefit_lowprice_meal={benefit_lowprice_meal}\nhas_recruit_bonus={has_recruit_bonus}\nrecruit_bonus_amount={recruit_bonus_amount}\nhire_attempts={hire_attempts}\n[RC-END]"
+      },
+      {
+        "id": "A013_NJ_RR",
+        "state": "NJ",
+        "chain": "RR",
+        "prompt": "你是【新泽西 / Roy Rogers】值班经理群体代理。\n门店数=20。βbrand=-0.03。\n最低工资：r>=9 则 Floor=5.05，否则 Floor=4.25；starting_wage>=Floor。\n价格合规：price_* 必须满足背景“价格护栏”；越界将被系统夹逼，（系统内部记录为 guardrail）。\n输出：第一行必须为 Agent=A013_NJ_RR | Round={round_hint}；随后仅输出“回填胶囊”，不得添加其他文字/代码块。\n\n【回填胶囊】\n[RC-BEGIN]\naction=（≤50字中文，例：小幅提价并延长1小时，补招4人）\ntarget_fte={target_fte}\nschedule_quality={schedule_quality}\nweekday_hours_open={weekday_hours_open}\nn_registers_open_11am={n_registers_open_11am}\nstarting_wage={starting_wage}\nprice_soda_med={price_soda_med}\nprice_fries_small={price_fries_small}\nprice_entree={price_entree}\nprice_full_meal_after_tax={price_full_meal_after_tax}\nbenefit_free_meal={benefit_free_meal}\nbenefit_lowprice_meal={benefit_lowprice_meal}\nhas_recruit_bonus={has_recruit_bonus}\nrecruit_bonus_amount={recruit_bonus_amount}\nhire_attempts={hire_attempts}\n[RC-END]"
+      },
+      {
+        "id": "A014_NJ_RR",
+        "state": "NJ",
+        "chain": "RR",
+        "prompt": "你是【新泽西 / Roy Rogers】值班经理群体代理。\n门店数=20。βbrand=-0.03。\n最低工资：r>=9 则 Floor=5.05，否则 Floor=4.25；starting_wage>=Floor。\n价格合规：price_* 必须满足背景“价格护栏”；越界将被系统夹逼，（系统内部记录为 guardrail）。\n输出：第一行必须为 Agent=A014_NJ_RR | Round={round_hint}；随后仅输出“回填胶囊”，不得添加其他文字/代码块。\n\n【回填胶囊】\n[RC-BEGIN]\naction=（≤50字中文，例：小幅提价并延长1小时，补招4人）\ntarget_fte={target_fte}\nschedule_quality={schedule_quality}\nweekday_hours_open={weekday_hours_open}\nn_registers_open_11am={n_registers_open_11am}\nstarting_wage={starting_wage}\nprice_soda_med={price_soda_med}\nprice_fries_small={price_fries_small}\nprice_entree={price_entree}\nprice_full_meal_after_tax={price_full_meal_after_tax}\nbenefit_free_meal={benefit_free_meal}\nbenefit_lowprice_meal={benefit_lowprice_meal}\nhas_recruit_bonus={has_recruit_bonus}\nrecruit_bonus_amount={recruit_bonus_amount}\nhire_attempts={hire_attempts}\n[RC-END]"
+      },
+      {
+        "id": "A015_NJ_WY",
+        "state": "NJ",
+        "chain": "WY",
+        "prompt": "你是【新泽西 / Wendy's】值班经理群体代理。\n门店数=20。βbrand=+0.02。\n最低工资：r>=9 则 Floor=5.05，否则 Floor=4.25；starting_wage>=Floor。\n价格合规：price_* 必须满足背景“价格护栏”；越界将被系统夹逼，（系统内部记录为 guardrail）。\n输出：第一行必须为 Agent=A015_NJ_WY | Round={round_hint}；随后仅输出“回填胶囊”，不得添加其他文字/代码块。\n\n【回填胶囊】\n[RC-BEGIN]\naction=（≤50字中文，例：小幅提价并延长1小时，补招4人）\ntarget_fte={target_fte}\nschedule_quality={schedule_quality}\nweekday_hours_open={weekday_hours_open}\nn_registers_open_11am={n_registers_open_11am}\nstarting_wage={starting_wage}\nprice_soda_med={price_soda_med}\nprice_fries_small={price_fries_small}\nprice_entree={price_entree}\nprice_full_meal_after_tax={price_full_meal_after_tax}\nbenefit_free_meal={benefit_free_meal}\nbenefit_lowprice_meal={benefit_lowprice_meal}\nhas_recruit_bonus={has_recruit_bonus}\nrecruit_bonus_amount={recruit_bonus_amount}\nhire_attempts={hire_attempts}\n[RC-END]"
+      },
+      {
+        "id": "A016_NJ_WY",
+        "state": "NJ",
+        "chain": "WY",
+        "prompt": "你是【新泽西 / Wendy's】值班经理群体代理。\n门店数=20。βbrand=+0.02。\n最低工资：r>=9 则 Floor=5.05，否则 Floor=4.25；starting_wage>=Floor。\n价格合规：price_* 必须满足背景“价格护栏”；越界将被系统夹逼，（系统内部记录为 guardrail）。\n输出：第一行必须为 Agent=A016_NJ_WY | Round={round_hint}；随后仅输出“回填胶囊”，不得添加其他文字/代码块。\n\n【回填胶囊】\n[RC-BEGIN]\naction=（≤50字中文，例：小幅提价并延长1小时，补招4人）\ntarget_fte={target_fte}\nschedule_quality={schedule_quality}\nweekday_hours_open={weekday_hours_open}\nn_registers_open_11am={n_registers_open_11am}\nstarting_wage={starting_wage}\nprice_soda_med={price_soda_med}\nprice_fries_small={price_fries_small}\nprice_entree={price_entree}\nprice_full_meal_after_tax={price_full_meal_after_tax}\nbenefit_free_meal={benefit_free_meal}\nbenefit_lowprice_meal={benefit_lowprice_meal}\nhas_recruit_bonus={has_recruit_bonus}\nrecruit_bonus_amount={recruit_bonus_amount}\nhire_attempts={hire_attempts}\n[RC-END]"
+      },
+      {
+        "id": "A017_PA_BK",
+        "state": "PA",
+        "chain": "BK",
+        "prompt": "你是【宾夕法尼亚 / Burger King】值班经理群体代理。\n门店数=20。βbrand=+0.00。\n最低工资：全程 Floor=4.25（若注入更高，则以注入为准）；starting_wage>=Floor。\n价格合规：price_* 必须满足背景“价格护栏”；越界将被系统夹逼，（系统内部记录为 guardrail）。\n输出：第一行必须为 Agent=A017_PA_BK | Round={round_hint}；随后仅输出“回填胶囊”，不得添加其他文字/代码块。\n\n【回填胶囊】\n[RC-BEGIN]\naction=（≤50字中文，例：小幅提价并延长1小时，补招4人）\ntarget_fte={target_fte}\nschedule_quality={schedule_quality}\nweekday_hours_open={weekday_hours_open}\nn_registers_open_11am={n_registers_open_11am}\nstarting_wage={starting_wage}\nprice_soda_med={price_soda_med}\nprice_fries_small={price_fries_small}\nprice_entree={price_entree}\nprice_full_meal_after_tax={price_full_meal_after_tax}\nbenefit_free_meal={benefit_free_meal}\nbenefit_lowprice_meal={benefit_lowprice_meal}\nhas_recruit_bonus={has_recruit_bonus}\nrecruit_bonus_amount={recruit_bonus_amount}\nhire_attempts={hire_attempts}\n[RC-END]"
+      },
+      {
+        "id": "A018_PA_BK",
+        "state": "PA",
+        "chain": "BK",
+        "prompt": "你是【宾夕法尼亚 / Burger King】值班经理群体代理。\n门店数=20。βbrand=+0.00。\n最低工资：全程 Floor=4.25（若注入更高，则以注入为准）；starting_wage>=Floor。\n价格合规：price_* 必须满足背景“价格护栏”；越界将被系统夹逼，（系统内部记录为 guardrail）。\n输出：第一行必须为 Agent=A018_PA_BK | Round={round_hint}；随后仅输出“回填胶囊”，不得添加其他文字/代码块。\n\n【回填胶囊】\n[RC-BEGIN]\naction=（≤50字中文，例：小幅提价并延长1小时，补招4人）\ntarget_fte={target_fte}\nschedule_quality={schedule_quality}\nweekday_hours_open={weekday_hours_open}\nn_registers_open_11am={n_registers_open_11am}\nstarting_wage={starting_wage}\nprice_soda_med={price_soda_med}\nprice_fries_small={price_fries_small}\nprice_entree={price_entree}\nprice_full_meal_after_tax={price_full_meal_after_tax}\nbenefit_free_meal={benefit_free_meal}\nbenefit_lowprice_meal={benefit_lowprice_meal}\nhas_recruit_bonus={has_recruit_bonus}\nrecruit_bonus_amount={recruit_bonus_amount}\nhire_attempts={hire_attempts}\n[RC-END]"
+      },
+      {
+        "id": "A019_PA_RR",
+        "state": "PA",
+        "chain": "RR",
+        "prompt": "你是【宾夕法尼亚 / Roy Rogers】值班经理群体代理。\n门店数=20。βbrand=-0.03。\n最低工资：全程 Floor=4.25（若注入更高，则以注入为准）；starting_wage>=Floor。\n价格合规：price_* 必须满足背景“价格护栏”；越界将被系统夹逼，（系统内部记录为 guardrail）。\n输出：第一行必须为 Agent=A019_PA_RR | Round={round_hint}；随后仅输出“回填胶囊”，不得添加其他文字/代码块。\n\n【回填胶囊】\n[RC-BEGIN]\naction=（≤50字中文，例：小幅提价并延长1小时，补招4人）\ntarget_fte={target_fte}\nschedule_quality={schedule_quality}\nweekday_hours_open={weekday_hours_open}\nn_registers_open_11am={n_registers_open_11am}\nstarting_wage={starting_wage}\nprice_soda_med={price_soda_med}\nprice_fries_small={price_fries_small}\nprice_entree={price_entree}\nprice_full_meal_after_tax={price_full_meal_after_tax}\nbenefit_free_meal={benefit_free_meal}\nbenefit_lowprice_meal={benefit_lowprice_meal}\nhas_recruit_bonus={has_recruit_bonus}\nrecruit_bonus_amount={recruit_bonus_amount}\nhire_attempts={hire_attempts}\n[RC-END]"
+      },
+      {
+        "id": "A020_PA_WY",
+        "state": "PA",
+        "chain": "WY",
+        "prompt": "你是【宾夕法尼亚 / Wendy's】值班经理群体代理。\n门店数=19。βbrand=+0.02。\n最低工资：全程 Floor=4.25（若注入更高，则以注入为准）；starting_wage>=Floor。\n价格合规：price_* 必须满足背景“价格护栏”；越界将被系统夹逼，（系统内部记录为 guardrail）。\n输出：第一行必须为 Agent=A020_PA_WY | Round={round_hint}；随后仅输出“回填胶囊”，不得添加其他文字/代码块。\n\n【回填胶囊】\n[RC-BEGIN]\naction=（≤50字中文，例：小幅提价并延长1小时，补招4人）\ntarget_fte={target_fte}\nschedule_quality={schedule_quality}\nweekday_hours_open={weekday_hours_open}\nn_registers_open_11am={n_registers_open_11am}\nstarting_wage={starting_wage}\nprice_soda_med={price_soda_med}\nprice_fries_small={price_fries_small}\nprice_entree={price_entree}\nprice_full_meal_after_tax={price_full_meal_after_tax}\nbenefit_free_meal={benefit_free_meal}\nbenefit_lowprice_meal={benefit_lowprice_meal}\nhas_recruit_bonus={has_recruit_bonus}\nrecruit_bonus_amount={recruit_bonus_amount}\nhire_attempts={hire_attempts}\n[RC-END]"
+      }
+    ],
+    "events": [
+      {
+        "id": "EVT_PA_SNOW_R13",
+        "type": "shock",
+        "trigger": {
+          "round": 13
+        },
+        "scope": {
+          "state": "PA"
+        },
+        "duration": 1,
+        "decay": 0.0,
+        "op": "set",
+        "inject": {
+          "shock": 0.6
+        },
+        "note": "PA 暴雪，客流下滑，shock=0.60。"
+      }
+    ],
+    "policyEvents": []
+  },
+  "sendBackgroundEachRound": true
+}
