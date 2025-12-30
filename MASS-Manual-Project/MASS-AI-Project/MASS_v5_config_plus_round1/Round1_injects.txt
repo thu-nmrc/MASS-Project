@@ -1,0 +1,180 @@
+# A001_NJ_BK
+[RC-INJECT-BEGIN]
+round_hint=1
+init_price_soda_med=1.09
+init_price_fries_small=1.19
+init_price_entree=3.39
+init_price_full_meal_after_tax=5.89
+[RC-INJECT-END]
+
+# A002_NJ_BK
+[RC-INJECT-BEGIN]
+round_hint=1
+init_price_soda_med=1.14
+init_price_fries_small=1.24
+init_price_entree=3.44
+init_price_full_meal_after_tax=5.94
+[RC-INJECT-END]
+
+# A003_NJ_BK
+[RC-INJECT-BEGIN]
+round_hint=1
+init_price_soda_med=1.19
+init_price_fries_small=1.29
+init_price_entree=3.49
+init_price_full_meal_after_tax=5.99
+[RC-INJECT-END]
+
+# A004_NJ_BK
+[RC-INJECT-BEGIN]
+round_hint=1
+init_price_soda_med=1.04
+init_price_fries_small=1.14
+init_price_entree=3.34
+init_price_full_meal_after_tax=5.84
+[RC-INJECT-END]
+
+# A005_NJ_BK
+[RC-INJECT-BEGIN]
+round_hint=1
+init_price_soda_med=1.12
+init_price_fries_small=1.22
+init_price_entree=3.42
+init_price_full_meal_after_tax=5.92
+[RC-INJECT-END]
+
+# A006_NJ_BK
+[RC-INJECT-BEGIN]
+round_hint=1
+init_price_soda_med=1.07
+init_price_fries_small=1.17
+init_price_entree=3.37
+init_price_full_meal_after_tax=5.87
+[RC-INJECT-END]
+
+# A007_NJ_BK
+[RC-INJECT-BEGIN]
+round_hint=1
+init_price_soda_med=1.16
+init_price_fries_small=1.26
+init_price_entree=3.46
+init_price_full_meal_after_tax=5.96
+[RC-INJECT-END]
+
+# A008_NJ_KFC
+[RC-INJECT-BEGIN]
+round_hint=1
+init_price_soda_med=1.19
+init_price_fries_small=1.29
+init_price_entree=3.59
+init_price_full_meal_after_tax=6.19
+[RC-INJECT-END]
+
+# A009_NJ_KFC
+[RC-INJECT-BEGIN]
+round_hint=1
+init_price_soda_med=1.25
+init_price_fries_small=1.35
+init_price_entree=3.65
+init_price_full_meal_after_tax=6.25
+[RC-INJECT-END]
+
+# A010_NJ_KFC
+[RC-INJECT-BEGIN]
+round_hint=1
+init_price_soda_med=1.15
+init_price_fries_small=1.25
+init_price_entree=3.55
+init_price_full_meal_after_tax=6.15
+[RC-INJECT-END]
+
+# A011_NJ_RR
+[RC-INJECT-BEGIN]
+round_hint=1
+init_price_soda_med=1.05
+init_price_fries_small=1.09
+init_price_entree=3.19
+init_price_full_meal_after_tax=5.69
+[RC-INJECT-END]
+
+# A012_NJ_RR
+[RC-INJECT-BEGIN]
+round_hint=1
+init_price_soda_med=1.09
+init_price_fries_small=1.13
+init_price_entree=3.23
+init_price_full_meal_after_tax=5.73
+[RC-INJECT-END]
+
+# A013_NJ_RR
+[RC-INJECT-BEGIN]
+round_hint=1
+init_price_soda_med=1.02
+init_price_fries_small=1.06
+init_price_entree=3.16
+init_price_full_meal_after_tax=5.66
+[RC-INJECT-END]
+
+# A014_NJ_RR
+[RC-INJECT-BEGIN]
+round_hint=1
+init_price_soda_med=1.12
+init_price_fries_small=1.16
+init_price_entree=3.26
+init_price_full_meal_after_tax=5.76
+[RC-INJECT-END]
+
+# A015_NJ_WY
+[RC-INJECT-BEGIN]
+round_hint=1
+init_price_soda_med=1.09
+init_price_fries_small=1.19
+init_price_entree=3.29
+init_price_full_meal_after_tax=5.79
+[RC-INJECT-END]
+
+# A016_NJ_WY
+[RC-INJECT-BEGIN]
+round_hint=1
+init_price_soda_med=1.14
+init_price_fries_small=1.24
+init_price_entree=3.34
+init_price_full_meal_after_tax=5.84
+[RC-INJECT-END]
+
+# A017_PA_BK
+[RC-INJECT-BEGIN]
+round_hint=1
+init_price_soda_med=1.12
+init_price_fries_small=1.22
+init_price_entree=3.42
+init_price_full_meal_after_tax=5.92
+[RC-INJECT-END]
+
+# A018_PA_BK
+[RC-INJECT-BEGIN]
+round_hint=1
+init_price_soda_med=1.07
+init_price_fries_small=1.17
+init_price_entree=3.37
+init_price_full_meal_after_tax=5.87
+[RC-INJECT-END]
+
+# A019_PA_RR
+[RC-INJECT-BEGIN]
+round_hint=1
+init_price_soda_med=1.08
+init_price_fries_small=1.12
+init_price_entree=3.22
+init_price_full_meal_after_tax=5.72
+[RC-INJECT-END]
+
+# A020_PA_WY
+[RC-INJECT-BEGIN]
+round_hint=1
+init_price_soda_med=1.12
+init_price_fries_small=1.22
+init_price_entree=3.33
+init_price_full_meal_after_tax=5.83
+[RC-INJECT-END]
+

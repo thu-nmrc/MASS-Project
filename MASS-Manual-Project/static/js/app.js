@@ -1520,7 +1520,8 @@ async function exportCSV() {
 
     if (data.status === 200) {
       log(`CSV 导出成功: ${data.filename}`);
-      alert(`导出成功: ${data.filename}\n文件位置: exports/${data.filename}`);
+      const filePath = data.path || `exports/${data.filename}`;
+      alert(`导出成功: ${data.filename}\n文件位置: ${filePath}`);
     } else {
       log(`CSV 导出失败: ${data.error}`, 'error');
       alert(`导出失败: ${data.error}`);
@@ -1539,7 +1540,8 @@ async function exportExcel() {
 
     if (data.status === 200) {
       log(`Excel 导出成功: ${data.filename}`, 'success');
-      alert(`导出成功: ${data.filename}\n\n文件位置: exports/${data.filename}\n\n包含两个工作表：\n- 模拟结果（简化版）\n- 详细数据（完整版）`);
+      const filePath = data.path || `exports/${data.filename}`;
+      alert(`导出成功: ${data.filename}\n\n文件位置: ${filePath}\n\n包含两个工作表：\n- 模拟结果（简化版）\n- 详细数据（完整版）`);
     } else {
       log(`Excel 导出失败: ${data.error}`, 'error');
 

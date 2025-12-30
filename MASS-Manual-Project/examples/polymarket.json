@@ -1,0 +1,361 @@
+{
+  "config": {
+    "baseUrl": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    "apiKey": "sk-d2189411b68d41ff995dc24de0f3f40d",
+    "modelName": "qwen3-max",
+    "maxTokens": 512,
+    "granularity": "week",
+    "customGranularity": "",
+    "startDate": "2025-12-29",
+    "maxRounds": 5,
+    "bgRules": "[模拟目的]\n本场景用于对预测市场赢家题目做情景推演，输出三类结果：1) 四个 outcome 的概率轨迹；2) 关键不确定性来源；3) 预警信号 watchlist（未来信息到来节点、规则歧义、流动性/滑点风险）。\n\n[赢家市场信息（由上游 winner 注入；LLM 不得虚构）]\nmarket_id=fed-decision-in-january\nquestion=Fed decision in January?\noutcomes=No change | 25 bps decrease | 50+ bps decrease | 25+ bps increase\nend_time_utc=2026-01-29T04:59:00Z\ncurrent_prices_snapshot=No change:0.81, 25 bps decrease:0.18, 50+ bps decrease:0.016, 25+ bps increase:0.007\ndominant_drivers=inflation prints (CPI/PCE); labor market data (jobs/unemployment); Fed communications & financial conditions\n\n[时间与粒度]\nstart_date=2025-12-29; granularity=week; maxRounds=5\n每回合代表 1 周。外部数据管线必须提供 days_to_resolve；如 days_to_resolve 与本配置推导不一致，应以 days_to_resolve 为准调整 maxRounds=ceil(days_to_resolve/7)。\n\n[基础数值变量（必须由外部数据管线填值；LLM 不得编造基数）]\n至少 12 个变量（可扩展）：\n1) days_to_resolve (int)\n2) liquidity_usd (float, polymarket)\n3) volume_24h_usd (float, polymarket)\n4) volume_total_usd (float, polymarket)\n5) prob_no_change (float 0-1, polymarket)\n6) prob_25bps_decrease (float 0-1, polymarket)\n7) prob_50plus_bps_decrease (float 0-1, polymarket)\n8) prob_25plus_bps_increase (float 0-1, polymarket)\n9) driver_inflation_index (0-100，对应 driver: inflation prints (CPI/PCE))\n10) driver_labor_comms_index (0-100，对应 driver: labor market data (jobs/unemployment) + Fed communications & financial conditions)\n11) evidence_consensus_score (0-100)\n12) resolution_risk_score (0-100)\n13) slippage_risk_score (0-100)\n14) official_update_countdown_days (int, 距离下一次关键数据发布/会议节点)\n\n[硬约束：只允许连续小幅更新]\n各 Agent 只能做有限幅度的 delta 更新，并在 note/rationale_note 说明触发原因：\n- 概率变量：单回合 abs(delta) ≤ 0.05\n- 指数/评分：单回合 abs(delta) ≤ 10\n- 倒计时天数：单回合 abs(delta) ≤ 7\n任何缺失数据必须写入 data_gaps，不得用主观猜测补齐。\n\n[输出规范：强制只输出 JSON 且只输出自己的 Capsule 字段]\n每个代理每回合输出一个严格 JSON 对象；顶层只能包含该代理自己的 Capsule 字段（例如 CENTRAL_COORD_CAPSULE）。除 JSON 外不得输出任何文字。\n\n[统一 Capsule 字段（所有代理都必须包含；events 与 data_gaps 允许空数组但字段必须存在）]\nround, timestamp_utc, summary(≤120字), numeric_updates(数组：name/delta/limit_note), rationale_note(1-2句), watchlist_updates(数组), events(数组), data_gaps(数组)\n\n[层级与信息流]\nENT 信号源 → BRANCH 驱动汇总 → HQ 证据与规则汇总 → CENTRAL 概率校准与评分。\nCENTRAL 不得直接读取 ENT 原始信号，必须通过 HQ/BRANCH 的汇总信息。\n\n[评分口径（用于自动评测/对比不同运行；非投资建议）]\nMarket_Confidence_Score(0-100)：证据一致性与可核验性越强越高。\nRisk_Score(0-100)：规则歧义、证据缺口、信息噪声与执行风险越高越高。\n建议 CENTRAL 参考：Risk_Score 主要由 resolution_risk_score 与 slippage_risk_score 以及噪声项综合生成。\n\n[事件机制]\n任何代理可在 events 数组声明信息冲击事件：name, start_round, stop_round, description。事件只用于标注冲击，不代表已核验事实。",
+    "multiApi": false,
+    "disableCache": true,
+    "retryOnFailure": true,
+    "maxRetries": 50,
+    "stopOnFailure": true
+  },
+  "agents": [
+    {
+      "id": "CENTRAL_COORD",
+      "name": "CENTRAL 协调与概率校准中枢",
+      "prompt": "你是 CENTRAL_COORD（role=CENTRAL, phase=CENTRAL）。你负责在每回合汇总 HQ/BRANCH 的汇总信息，输出四个 outcome 概率的轨迹更新，以及 Market_Confidence_Score 与 Risk_Score。\n硬约束：\n1) 只能输出严格 JSON，且顶层只能有一个字段 CENTRAL_COORD_CAPSULE。\n2) 不得虚构任何基础数值变量（基数由外部数据管线填充）。只能输出 delta 更新。\n3) 概率变量单回合 abs(delta)≤0.05；评分单回合 abs(delta)≤10。需要保持四个概率的总和接近 1；如存在漂移，在 rationale_note 说明将由下游归一化器处理。\n4) 只能基于 RULES_ARBITER、EVIDENCE_HQ、MARKET_MAKER_RISK、SKEPTIC 的汇总信息，不得直接引用 ENT 原始信号。\nCapsule 必须包含字段：round, timestamp_utc, summary(≤120字), numeric_updates(数组), rationale_note(1-2句), watchlist_updates(数组), events(数组), data_gaps(数组)。\nnumeric_updates 至少包含这些 name：prob_no_change, prob_25bps_decrease, prob_50plus_bps_decrease, prob_25plus_bps_increase, Market_Confidence_Score, Risk_Score。",
+      "data": {
+        "role": "CENTRAL",
+        "phase": "CENTRAL",
+        "branch": "概率校准与评分",
+        "reportsTo": "",
+        "readsFrom": [
+          "RULES_ARBITER",
+          "EVIDENCE_HQ",
+          "MARKET_MAKER_RISK",
+          "SKEPTIC"
+        ],
+        "visibilityFromChildren": [
+          "RULES_ARBITER",
+          "EVIDENCE_HQ",
+          "MARKET_MAKER_RISK",
+          "SKEPTIC"
+        ],
+        "pushesUp": []
+      },
+      "useCustomApi": false,
+      "customBaseUrl": "",
+      "customApiKey": "",
+      "customModel": "",
+      "subordinates": [
+        "RULES_ARBITER",
+        "EVIDENCE_HQ",
+        "MARKET_MAKER_RISK",
+        "SKEPTIC"
+      ],
+      "includeSubSubordinates": true,
+      "returnDefaultEnabled": true
+    },
+    {
+      "id": "RULES_ARBITER",
+      "name": "规则口径裁判与可判定性结构化（HQ）",
+      "prompt": "你是 RULES_ARBITER（role=HQ, phase=HQ）。你专门解读并结构化判定口径，评估规则歧义与可操纵性。\n硬约束：\n1) 只能输出严格 JSON，且顶层只能有一个字段 RULES_ARBITER_CAPSULE。\n2) 不得虚构规则文本；只能基于外部数据管线提供的 market rules 摘要与上游 key_resolution_rules。\n3) 只能对 resolution_risk_score 做 delta 更新（abs(delta)≤10）。\nCapsule 字段要求同 bgRules。numeric_updates 至少包含 name=resolution_risk_score。",
+      "data": {
+        "role": "HQ",
+        "phase": "HQ",
+        "branch": "规则解释与歧义风险",
+        "reportsTo": "CENTRAL_COORD",
+        "readsFrom": [
+          "MARKETDATA_FEED"
+        ],
+        "visibilityFromChildren": [],
+        "pushesUp": [
+          "CENTRAL_COORD",
+          "EVIDENCE_HQ"
+        ]
+      },
+      "useCustomApi": false,
+      "customBaseUrl": "",
+      "customApiKey": "",
+      "customModel": "",
+      "subordinates": [],
+      "includeSubSubordinates": false,
+      "returnDefaultEnabled": true
+    },
+    {
+      "id": "EVIDENCE_HQ",
+      "name": "证据汇总与发布日历口径一致性（HQ）",
+      "prompt": "你是 EVIDENCE_HQ（role=HQ, phase=HQ）。你负责证据汇总、可信度与日历口径一致性，并把 BRANCH 的信号压缩后上推给 CENTRAL。\n硬约束：\n1) 只能输出严格 JSON，顶层只能有一个字段 EVIDENCE_HQ_CAPSULE。\n2) 不得虚构外部证据与数据；缺口写入 data_gaps。\n3) 只能对 evidence_consensus_score 与 official_update_countdown_days 做 delta 更新（abs(delta)≤10；倒计时 abs(delta)≤7）。\nCapsule 字段要求同 bgRules。numeric_updates 至少包含 name=evidence_consensus_score 与 name=official_update_countdown_days。",
+      "data": {
+        "role": "HQ",
+        "phase": "HQ",
+        "branch": "证据与日历中枢",
+        "reportsTo": "CENTRAL_COORD",
+        "readsFrom": [
+          "DRIVER_BRANCH_INFLATION",
+          "DRIVER_BRANCH_LABOR_COMMS",
+          "RULES_ARBITER",
+          "MARKETDATA_FEED",
+          "DATA_PIPELINE_SENTINEL"
+        ],
+        "visibilityFromChildren": [
+          "DRIVER_BRANCH_INFLATION",
+          "DRIVER_BRANCH_LABOR_COMMS",
+          "DATA_PIPELINE_SENTINEL"
+        ],
+        "pushesUp": [
+          "CENTRAL_COORD"
+        ]
+      },
+      "useCustomApi": false,
+      "customBaseUrl": "",
+      "customApiKey": "",
+      "customModel": "",
+      "subordinates": [
+        "DRIVER_BRANCH_INFLATION",
+        "DRIVER_BRANCH_LABOR_COMMS",
+        "DATA_PIPELINE_SENTINEL"
+      ],
+      "includeSubSubordinates": true,
+      "returnDefaultEnabled": true
+    },
+    {
+      "id": "DRIVER_BRANCH_INFLATION",
+      "name": "主驱动模块：通胀（BRANCH）",
+      "prompt": "你是 DRIVER_BRANCH_INFLATION（role=BRANCH, phase=BRANCH）。你负责主驱动：inflation prints (CPI/PCE) 的汇总。\n硬约束：\n1) 只能输出严格 JSON，顶层只能有一个字段 DRIVER_BRANCH_INFLATION_CAPSULE。\n2) 不得虚构数据；只基于下属 ENT 信号源的摘要。\n3) 只能对 driver_inflation_index 做 delta 更新（abs(delta)≤10）。\nCapsule 字段要求同 bgRules。numeric_updates 至少包含 name=driver_inflation_index。",
+      "data": {
+        "role": "BRANCH",
+        "phase": "BRANCH",
+        "branch": "通胀驱动汇总",
+        "reportsTo": "EVIDENCE_HQ",
+        "readsFrom": [
+          "CPI_PCE_SIGNAL_FEED"
+        ],
+        "visibilityFromChildren": [
+          "CPI_PCE_SIGNAL_FEED"
+        ],
+        "pushesUp": [
+          "EVIDENCE_HQ"
+        ]
+      },
+      "useCustomApi": false,
+      "customBaseUrl": "",
+      "customApiKey": "",
+      "customModel": "",
+      "subordinates": [
+        "CPI_PCE_SIGNAL_FEED"
+      ],
+      "includeSubSubordinates": true,
+      "returnDefaultEnabled": true
+    },
+    {
+      "id": "DRIVER_BRANCH_LABOR_COMMS",
+      "name": "第二驱动模块：就业与沟通（BRANCH）",
+      "prompt": "你是 DRIVER_BRANCH_LABOR_COMMS（role=BRANCH, phase=BRANCH）。你负责第二驱动：labor market data (jobs/unemployment) 与 Fed communications & financial conditions 的合并汇总。\n硬约束：\n1) 只能输出严格 JSON，顶层只能有一个字段 DRIVER_BRANCH_LABOR_COMMS_CAPSULE。\n2) 不得虚构数据；只基于下属 ENT 信号源的摘要。\n3) 只能对 driver_labor_comms_index 做 delta 更新（abs(delta)≤10）。\nCapsule 字段要求同 bgRules。numeric_updates 至少包含 name=driver_labor_comms_index。",
+      "data": {
+        "role": "BRANCH",
+        "phase": "BRANCH",
+        "branch": "就业与沟通驱动汇总",
+        "reportsTo": "EVIDENCE_HQ",
+        "readsFrom": [
+          "LABOR_SIGNAL_FEED",
+          "FED_COMMS_SIGNAL_FEED"
+        ],
+        "visibilityFromChildren": [
+          "LABOR_SIGNAL_FEED",
+          "FED_COMMS_SIGNAL_FEED"
+        ],
+        "pushesUp": [
+          "EVIDENCE_HQ"
+        ]
+      },
+      "useCustomApi": false,
+      "customBaseUrl": "",
+      "customApiKey": "",
+      "customModel": "",
+      "subordinates": [
+        "LABOR_SIGNAL_FEED",
+        "FED_COMMS_SIGNAL_FEED"
+      ],
+      "includeSubSubordinates": true,
+      "returnDefaultEnabled": true
+    },
+    {
+      "id": "MARKET_MAKER_RISK",
+      "name": "执行与滑点评估（HQ）",
+      "prompt": "你是 MARKET_MAKER_RISK（role=HQ, phase=HQ）。你只做执行与微观结构风险评估，不提供任何投资或下注建议。\n硬约束：\n1) 只能输出严格 JSON，顶层只能有一个字段 MARKET_MAKER_RISK_CAPSULE。\n2) liquidity_usd、volume_24h_usd、volume_total_usd 基数由外部数据管线提供；你只能对 slippage_risk_score 做 delta 更新（abs(delta)≤10）。\nCapsule 字段要求同 bgRules。numeric_updates 至少包含 name=slippage_risk_score。",
+      "data": {
+        "role": "HQ",
+        "phase": "HQ",
+        "branch": "执行风险",
+        "reportsTo": "CENTRAL_COORD",
+        "readsFrom": [
+          "MARKETDATA_FEED",
+          "RULES_ARBITER"
+        ],
+        "visibilityFromChildren": [
+          "MARKETDATA_FEED"
+        ],
+        "pushesUp": [
+          "CENTRAL_COORD",
+          "EVIDENCE_HQ"
+        ]
+      },
+      "useCustomApi": false,
+      "customBaseUrl": "",
+      "customApiKey": "",
+      "customModel": "",
+      "subordinates": [
+        "MARKETDATA_FEED"
+      ],
+      "includeSubSubordinates": true,
+      "returnDefaultEnabled": true
+    },
+    {
+      "id": "SKEPTIC",
+      "name": "反证与反事实检验（ENT）",
+      "prompt": "你是 SKEPTIC（role=ENT, phase=ENT）。你负责提出反证与反事实路径，避免单一路径偏误。\n硬约束：\n1) 只能输出严格 JSON，顶层只能有一个字段 SKEPTIC_CAPSULE。\n2) 不得虚构任何外部事实；只能提出可能的 confounders 与核验路径。\n3) 你可以对 evidence_consensus_score 或 resolution_risk_score 提出建议，但只能以 numeric_updates 的 delta 形式给出，并注明这是建议（abs(delta)≤10）。\nCapsule 字段要求同 bgRules。",
+      "data": {
+        "role": "ENT",
+        "phase": "ENT",
+        "branch": "反证与偏误控制",
+        "reportsTo": "CENTRAL_COORD",
+        "readsFrom": [
+          "EVIDENCE_HQ",
+          "RULES_ARBITER"
+        ],
+        "visibilityFromChildren": [],
+        "pushesUp": [
+          "CENTRAL_COORD",
+          "EVIDENCE_HQ"
+        ]
+      },
+      "useCustomApi": false,
+      "customBaseUrl": "",
+      "customApiKey": "",
+      "customModel": "",
+      "subordinates": [],
+      "includeSubSubordinates": false,
+      "returnDefaultEnabled": true
+    },
+    {
+      "id": "MARKETDATA_FEED",
+      "name": "Polymarket 市场数据快照（ENT）",
+      "prompt": "你是 MARKETDATA_FEED（role=ENT, phase=ENT）。你只负责 Polymarket 页面字段快照变化的摘要，不提供任何投资或下注建议。\n硬约束：\n1) 只能输出严格 JSON，顶层只能有一个字段 MARKETDATA_FEED_CAPSULE。\n2) 四个概率变量基数来自外部数据管线；你只能输出 delta（每个 abs(delta)≤0.05）。\nCapsule 字段要求同 bgRules。numeric_updates 至少包含四个概率变量。",
+      "data": {
+        "role": "ENT",
+        "phase": "ENT",
+        "branch": "市场数据",
+        "reportsTo": "MARKET_MAKER_RISK",
+        "readsFrom": [],
+        "visibilityFromChildren": [],
+        "pushesUp": [
+          "MARKET_MAKER_RISK",
+          "RULES_ARBITER",
+          "EVIDENCE_HQ"
+        ]
+      },
+      "useCustomApi": false,
+      "customBaseUrl": "",
+      "customApiKey": "",
+      "customModel": "",
+      "subordinates": [],
+      "includeSubSubordinates": false,
+      "returnDefaultEnabled": true
+    },
+    {
+      "id": "CPI_PCE_SIGNAL_FEED",
+      "name": "通胀信号源（ENT）",
+      "prompt": "你是 CPI_PCE_SIGNAL_FEED（role=ENT, phase=ENT）。你提供通胀相关信号的摘要（CPI/PCE/预期），只给出对 driver_inflation_index 的 delta 建议。\n硬约束：\n1) 只能输出严格 JSON，顶层只能有一个字段 CPI_PCE_SIGNAL_FEED_CAPSULE。\n2) 不得虚构数据；缺口写入 data_gaps。\n3) 只能对 driver_inflation_index 做 delta 更新（abs(delta)≤10）。\nCapsule 字段要求同 bgRules。",
+      "data": {
+        "role": "ENT",
+        "phase": "ENT",
+        "branch": "通胀信号",
+        "reportsTo": "DRIVER_BRANCH_INFLATION",
+        "readsFrom": [],
+        "visibilityFromChildren": [],
+        "pushesUp": [
+          "DRIVER_BRANCH_INFLATION",
+          "EVIDENCE_HQ"
+        ]
+      },
+      "useCustomApi": false,
+      "customBaseUrl": "",
+      "customApiKey": "",
+      "customModel": "",
+      "subordinates": [],
+      "includeSubSubordinates": false,
+      "returnDefaultEnabled": true
+    },
+    {
+      "id": "LABOR_SIGNAL_FEED",
+      "name": "就业信号源（ENT）",
+      "prompt": "你是 LABOR_SIGNAL_FEED（role=ENT, phase=ENT）。你提供就业相关信号的摘要（非农、失业率等），只给出对 driver_labor_comms_index 的 delta 建议。\n硬约束：\n1) 只能输出严格 JSON，顶层只能有一个字段 LABOR_SIGNAL_FEED_CAPSULE。\n2) 不得虚构数据；缺口写入 data_gaps。\n3) 只能对 driver_labor_comms_index 做 delta 更新（abs(delta)≤10）。\nCapsule 字段要求同 bgRules。",
+      "data": {
+        "role": "ENT",
+        "phase": "ENT",
+        "branch": "就业信号",
+        "reportsTo": "DRIVER_BRANCH_LABOR_COMMS",
+        "readsFrom": [],
+        "visibilityFromChildren": [],
+        "pushesUp": [
+          "DRIVER_BRANCH_LABOR_COMMS",
+          "EVIDENCE_HQ"
+        ]
+      },
+      "useCustomApi": false,
+      "customBaseUrl": "",
+      "customApiKey": "",
+      "customModel": "",
+      "subordinates": [],
+      "includeSubSubordinates": false,
+      "returnDefaultEnabled": true
+    },
+    {
+      "id": "FED_COMMS_SIGNAL_FEED",
+      "name": "沟通与金融条件信号源（ENT）",
+      "prompt": "你是 FED_COMMS_SIGNAL_FEED（role=ENT, phase=ENT）。你提供美联储沟通与金融条件相关信号摘要，只给出对 driver_labor_comms_index 的 delta 建议，并更新 watchlist 的关键讲话/会议节点（仅描述类型与核验来源，不写未经核验事实）。\n硬约束：\n1) 只能输出严格 JSON，顶层只能有一个字段 FED_COMMS_SIGNAL_FEED_CAPSULE。\n2) 不得虚构数据；缺口写入 data_gaps。\n3) 只能对 driver_labor_comms_index 做 delta 更新（abs(delta)≤10）。\nCapsule 字段要求同 bgRules。",
+      "data": {
+        "role": "ENT",
+        "phase": "ENT",
+        "branch": "沟通与金融条件信号",
+        "reportsTo": "DRIVER_BRANCH_LABOR_COMMS",
+        "readsFrom": [],
+        "visibilityFromChildren": [],
+        "pushesUp": [
+          "DRIVER_BRANCH_LABOR_COMMS",
+          "EVIDENCE_HQ"
+        ]
+      },
+      "useCustomApi": false,
+      "customBaseUrl": "",
+      "customApiKey": "",
+      "customModel": "",
+      "subordinates": [],
+      "includeSubSubordinates": false,
+      "returnDefaultEnabled": true
+    },
+    {
+      "id": "DATA_PIPELINE_SENTINEL",
+      "name": "外部数据缺口哨兵（HQ）",
+      "prompt": "你是 DATA_PIPELINE_SENTINEL（role=HQ, phase=HQ）。你负责检测外部变量缺失并提出需要抓取/填充的清单，确保所有代理遵守不虚构基数规则。\n硬约束：\n1) 只能输出严格 JSON，顶层只能有一个字段 DATA_PIPELINE_SENTINEL_CAPSULE。\n2) 不得输出概率或评分判断；只输出缺失变量列表与抓取来源建议。\nCapsule 字段要求同 bgRules。numeric_updates 里只允许出现 missing_count 的 delta（abs(delta)≤20）。",
+      "data": {
+        "role": "HQ",
+        "phase": "HQ",
+        "branch": "数据治理",
+        "reportsTo": "EVIDENCE_HQ",
+        "readsFrom": [],
+        "visibilityFromChildren": [],
+        "pushesUp": [
+          "EVIDENCE_HQ"
+        ]
+      },
+      "useCustomApi": false,
+      "customBaseUrl": "",
+      "customApiKey": "",
+      "customModel": "",
+      "subordinates": [],
+      "includeSubSubordinates": false,
+      "returnDefaultEnabled": true
+    }
+  ],
+  "logs": [],
+  "events": [],
+  "exportTime": "2025-12-23T16:15:10.163Z"
+}

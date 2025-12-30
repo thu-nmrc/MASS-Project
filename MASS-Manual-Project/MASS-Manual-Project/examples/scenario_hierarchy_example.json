@@ -1,0 +1,122 @@
+{
+  "config": {
+    "baseUrl": "https://api.openai.com/v1",
+    "apiKey": "",
+    "modelName": "gpt-4",
+    "granularity": "week",
+    "startDate": "2025-01-01",
+    "maxRounds": 5,
+    "bgRules": "这是一个军事指挥模拟系统。国王统领全局，将军指挥士兵，每个层级都需要根据下属的行动做出决策。",
+    "multiApi": false,
+    "disableCache": false,
+    "retryOnFailure": true,
+    "maxRetries": 3,
+    "stopOnFailure": false
+  },
+  "agents": [
+    {
+      "id": "agent_king",
+      "name": "国王A",
+      "prompt": "你是国王，负责制定整体战略。你需要根据将军们的汇报做出最高层决策。",
+      "data": {},
+      "useCustomApi": false,
+      "customBaseUrl": "",
+      "customApiKey": "",
+      "customModel": "",
+      "subordinates": ["agent_general_b", "agent_general_c"],
+      "includeSubSubordinates": true
+    },
+    {
+      "id": "agent_general_b",
+      "name": "将军B",
+      "prompt": "你是将军B，负责指挥东线战场。你需要根据士兵的战况汇报做出战术决策。",
+      "data": {},
+      "useCustomApi": false,
+      "customBaseUrl": "",
+      "customApiKey": "",
+      "customModel": "",
+      "subordinates": ["agent_soldier_d", "agent_soldier_e", "agent_soldier_f"],
+      "includeSubSubordinates": false
+    },
+    {
+      "id": "agent_general_c",
+      "name": "将军C",
+      "prompt": "你是将军C，负责指挥西线战场。你需要根据士兵的战况汇报做出战术决策。",
+      "data": {},
+      "useCustomApi": false,
+      "customBaseUrl": "",
+      "customApiKey": "",
+      "customModel": "",
+      "subordinates": ["agent_soldier_g", "agent_soldier_h"],
+      "includeSubSubordinates": false
+    },
+    {
+      "id": "agent_soldier_d",
+      "name": "士兵D",
+      "prompt": "你是东线士兵D，负责前线侦察。报告你观察到的敌情。",
+      "data": {},
+      "useCustomApi": false,
+      "customBaseUrl": "",
+      "customApiKey": "",
+      "customModel": "",
+      "subordinates": [],
+      "includeSubSubordinates": false
+    },
+    {
+      "id": "agent_soldier_e",
+      "name": "士兵E",
+      "prompt": "你是东线士兵E，负责前线战斗。报告你的战斗情况。",
+      "data": {},
+      "useCustomApi": false,
+      "customBaseUrl": "",
+      "customApiKey": "",
+      "customModel": "",
+      "subordinates": [],
+      "includeSubSubordinates": false
+    },
+    {
+      "id": "agent_soldier_f",
+      "name": "士兵F",
+      "prompt": "你是东线士兵F，负责后勤补给。报告你的补给情况。",
+      "data": {},
+      "useCustomApi": false,
+      "customBaseUrl": "",
+      "customApiKey": "",
+      "customModel": "",
+      "subordinates": [],
+      "includeSubSubordinates": false
+    },
+    {
+      "id": "agent_soldier_g",
+      "name": "士兵G",
+      "prompt": "你是西线士兵G，负责防御工事。报告你的防御准备情况。",
+      "data": {},
+      "useCustomApi": false,
+      "customBaseUrl": "",
+      "customApiKey": "",
+      "customModel": "",
+      "subordinates": [],
+      "includeSubSubordinates": false
+    },
+    {
+      "id": "agent_soldier_h",
+      "name": "士兵H",
+      "prompt": "你是西线士兵H，负责通讯联络。报告你的通讯状况。",
+      "data": {},
+      "useCustomApi": false,
+      "customBaseUrl": "",
+      "customApiKey": "",
+      "customModel": "",
+      "subordinates": [],
+      "includeSubSubordinates": false
+    }
+  ],
+  "events": {
+    "3": {
+      "name": "敌军突袭",
+      "description": "敌军在第3回合发动突然袭击，东线和西线同时受到压力。"
+    }
+  },
+  "exportTime": "2025-10-27T12:00:00.000Z",
+  "version": "1.2"
+}

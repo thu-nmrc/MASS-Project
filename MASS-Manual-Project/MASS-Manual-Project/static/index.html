@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MASS - Multi-Agent Social Simulation Platform</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ccircle cx='50' cy='50' r='40' fill='%233498db'/%3E%3C/svg%3E">
+  <style>
+    :root {
+      --bg: #0b0f14;
+      --panel: #121821;
+      --border: #223044;
+      --text: #e6eef8;
+      --muted: #93a4b7;
+      --primary: #3498db;
+      --success: #27ae60;
+      --warning: #f39c12;
+      --danger: #e74c3c;
+    }
+    
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      background: linear-gradient(180deg, var(--bg), #0e141d);
+      color: var(--text);
+      line-height: 1.6;
+    }
+    
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 1rem 1.5rem;
+      background: rgba(18, 24, 33, 0.9);
+      backdrop-filter: blur(10px);
+      border-bottom: 1px solid var(--border);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    
+    h1 {
+      font-size: 1.5rem;
+      font-weight: 600;
+    }
+    
+    .subtitle {
+      font-size: 0.875rem;
+      color: var(--muted);
+      margin-top: 0.25rem;
+    }
+    
+    main {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.5rem;
+      padding: 1.5rem;
+      max-width: 1800px;
+      margin: 0 auto;
+    }
+    
+    section {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.5rem;
+    }
+    
+    h2 {
+      font-size: 1.25rem;
+      margin-bottom: 1rem;
+      color: var(--primary);
+    }
+    
+    h3 {
+      font-size: 1.1rem;
+      margin: 1.5rem 0 0.75rem;
+      color: var(--text);
+    }
+    
+    .form-group {
+      margin-bottom: 1rem;
+    }
+    
+    label {
+      display: block;
+      margin-bottom: 0.5rem;
+      font-size: 0.875rem;
+      color: var(--muted);
+    }
+    
+    input, select, textarea {
+      width: 100%;
+      padding: 0.75rem;
+      background: #0f1520;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      font-size: 0.875rem;
+    }
+    
+    input:focus, select:focus, textarea:focus {
+      outline: none;
+      border-color: var(--primary);
+    }
+    
+    textarea {
+      min-height: 100px;
+      resize: vertical;
+      font-family: inherit;
+    }
+    
+    button {
+      padding: 0.75rem 1.25rem;
+      background: var(--primary);
+      color: white;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 0.875rem;
+      font-weight: 500;
+      transition: all 0.2s;
+    }
+    
+    button:hover {
+      opacity: 0.9;
+      transform: translateY(-1px);
+    }
+    
+    button:active {
+      transform: translateY(0);
+    }
+    
+    .btn-success { background: var(--success); }
+    .btn-warning { background: var(--warning); }
+    .btn-danger { background: var(--danger); }
+    .btn-secondary { background: #34495e; }
+    
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+    }
+    
+    .flex {
+      display: flex;
+      gap: 0.75rem;
+      align-items: center;
+    }
+    
+    .agent-card {
+      background: #0f1520;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1rem;
+      margin-bottom: 0.75rem;
+    }
+    
+    .agent-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 0.5rem;
+    }
+    
+    .agent-name {
+      font-weight: 600;
+      color: var(--primary);
+    }
+    
+    .badge {
+      display: inline-block;
+      padding: 0.25rem 0.75rem;
+      background: rgba(52, 152, 219, 0.2);
+      border: 1px solid var(--primary);
+      border-radius: 999px;
+      font-size: 0.75rem;
+    }
+    
+    .log-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.875rem;
+    }
+    
+    .log-table th,
+    .log-table td {
+      padding: 0.75rem;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+    }
+    
+    .log-table th {
+      background: #0f1520;
+      font-weight: 600;
+      position: sticky;
+      top: 0;
+    }
+    
+    .table-container {
+      max-height: 500px;
+      overflow-y: auto;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+    }
+    
+    .status-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0.75rem 1rem;
+      background: rgba(52, 152, 219, 0.1);
+      border: 1px solid var(--primary);
+      border-radius: 8px;
+      margin-bottom: 1rem;
+    }
+    
+    .console {
+      background: #0b1018;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1rem;
+      max-height: 300px;
+      overflow-y: auto;
+      font-family: 'Courier New', monospace;
+      font-size: 0.8rem;
+      white-space: pre-wrap;
+    }
+    
+    .hidden {
+      display: none;
+    }
+    
+    @media (max-width: 1200px) {
+      main {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1 data-i18n="app.title">MASS - Multi-Agent Social Simulation Platform</h1>
+      <div class="subtitle" data-i18n="app.subtitle">Multi-Agent Social Simulation Platform</div>
+    </div>
+    <div class="flex" style="gap: 1rem;">
+      <select id="languageSelector" style="padding: 0.5rem; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; color: var(--text); font-size: 0.875rem; cursor: pointer;">
+        <option value="en">English</option>
+        <option value="zh-CN">中文</option>
+      </select>
+      <span id="tokenCount" style="font-size: 0.875rem;"><span data-i18n="app.tokens">Tokens</span>: 0</span>
+    </div>
+  </header>
+
+  <main>
+    <!-- Left Panel: Configuration -->
+    <div>
+      <section>
+        <!--
+        MASS Project - originated by Xiaoli Hu (胡晓李)
+        Copyright (c) 2025 Xiaoli Hu
+        Licensed under the MIT License. See LICENSE file in the project root.
+        -->
+        <h2 data-i18n="section.settings">⚙️ Basic Settings</h2>
+        
+        <div class="grid-2">
+          <div class="form-group">
+            <label data-i18n="granularity">Time Granularity</label>
+            <select id="granularity">
+              <option value="day" data-i18n="granularity.day">Day</option>
+              <option value="week" selected data-i18n="granularity.week">Week</option>
+              <option value="month" data-i18n="granularity.month">Month</option>
+              <option value="quarter" data-i18n="granularity.quarter">Quarter</option>
+              <option value="year" data-i18n="granularity.year">Year</option>
+              <option value="round" data-i18n="granularity.round">Round</option>
+              <option value="touchpoint" data-i18n="granularity.touchpoint">Touch Point</option>
+              <option value="custom" data-i18n="granularity.custom">Custom</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label data-i18n="startDate">Start Date</label>
+            <input type="date" id="startDate">
+            <small style="color: var(--muted); font-size: 0.75rem; display: block; margin-top: 0.25rem;" data-i18n="startDate.hint">Optional for Round/Touch Point/Custom mode</small>
+          </div>
+        </div>
+        
+        <div class="form-group" id="customGranularityGroup" style="display: none;">
+          <label data-i18n="customGranularity">Custom Time Unit Name</label>
+          <input type="text" id="customGranularity" placeholder="e.g.: Phase, Stage, Step, Milestone..." data-i18n="customGranularity.placeholder">
+          <small style="color: var(--muted); font-size: 0.75rem; display: block; margin-top: 0.25rem;" data-i18n="customGranularity.hint">Define your own time unit name for the simulation</small>
+        </div>
+        
+        <div class="form-group">
+          <label data-i18n="maxRounds">Max Rounds (1-1000)</label>
+          <input type="number" id="maxRounds" value="8" min="1" max="1000">
+          <small style="color: var(--muted); font-size: 0.75rem;" data-i18n="maxRounds.hint">System supports up to 1000 rounds</small>
+        </div>
+        
+        <div class="form-group">
+          <label data-i18n="bgRules">Background Rules</label>
+          <textarea id="bgRules" data-i18n="bgRules.placeholder" placeholder="Enter simulation background rules, policies, constraints, etc..."></textarea>
+        </div>
+        
+        <h3 data-i18n="section.agents">🤖 Agent Management</h3>
+        
+        <div class="form-group">
+          <label data-i18n="agent.name">Agent Name</label>
+          <input type="text" id="agentName" data-i18n="agent.name.placeholder" placeholder="e.g.: Store A, Worker B">
+        </div>
+       <div class="form-group">
+          <label data-i18n="agent.prompt">Agent Prompt</label>
+          <textarea id="agentPrompt" data-i18n="agent.prompt.placeholder" placeholder="Describe the agent's role, goals, decision logic..."></textarea>
+        </div>
+
+        <div class="flex">
+          <button id="addAgent" class="btn-success" data-i18n="agent.add">➕ Add Agent</button>
+          <span id="agentCount" style="font-size: 0.875rem; color: var(--muted);">0/300 <span data-i18n="agent.count">Agents</span></span>
+        </div>
+        <small style="color: var(--muted); font-size: 0.75rem; display: block; margin-top: 0.25rem;" data-i18n="agent.count.hint">System supports up to 300 agents</small>
+        
+        <div class="flex" style="margin-top: 0.5rem;">
+          <input type="file" id="importConfig" accept=".json" style="display: none;">
+          <button id="importConfigBtn" class="btn-secondary" style="font-size: 0.875rem;" data-i18n="import.config">📥 Import Config</button>
+          <button id="exportConfigBtn" class="btn-secondary" style="font-size: 0.875rem;" data-i18n="export.config">📤 Export Config</button>
+        </div>
+        
+        <div id="agentList" style="margin-top: 1rem;"></div>
+        
+        <h3 data-i18n="section.events">⚡ 突发事件</h3>
+
+        <div class="form-group">
+          <label data-i18n="event.round">触发回合</label>
+          <input type="number" id="eventRound" data-i18n="event.round.placeholder" placeholder="例如: 3" min="1">
+        </div>
+        <div class="form-group">
+          <label data-i18n="event.stop">停止回合</label>
+          <input type="number" id="eventStop" data-i18n="event.stop.placeholder" placeholder="例如: 4" min="1">
+        </div>
+        <div class="form-group">
+          <label data-i18n="event.name">事件名称</label>
+          <input type="text" id="eventName" data-i18n="event.name.placeholder" placeholder="例如: 政策变化">
+        </div>
+        
+        <div class="form-group">
+          <label data-i18n="event.desc">事件描述</label>
+          <textarea id="eventDesc" data-i18n="event.desc.placeholder" placeholder="描述这个突发事件的内容和影响..." style="min-height: 80px;"></textarea>
+        </div>
+        
+        <div class="flex">
+          <button id="addEvent" class="btn-success" data-i18n="event.add">➕ 添加事件</button>
+          <span id="eventCount" style="font-size: 0.875rem; color: var(--muted);">0 <span data-i18n="event.count">个事件</span></span>
+        </div>
+        
+        <div id="eventList" style="margin-top: 1rem;"></div>
+        
+        <h3 data-i18n="section.api">🔌 API Configuration</h3>
+        
+        <div class="form-group">
+          <label data-i18n="api.baseUrl">Base URL</label>
+          <input type="text" id="baseUrl" data-i18n="api.baseUrl.placeholder" placeholder="https://api.openai.com/v1">
+        </div>
+        
+        <div class="grid-2">
+          <div class="form-group">
+            <label data-i18n="api.key">API Key</label>
+            <input type="password" id="apiKey" data-i18n="api.key.placeholder" placeholder="sk-...">
+          </div>
+          <div class="form-group">
+            <label data-i18n="api.model">模型名称</label>
+            <input type="text" id="modelName" data-i18n="api.model.placeholder" placeholder="gpt-4">
+          </div>
+        </div>
+        
+        <div class="form-group">
+          <label style="display: flex; align-items: center; gap: 0.5rem;">
+            <input type="checkbox" id="multiApi" style="width: auto;">
+            <span data-i18n="api.multiApi">启用多 API 模式（不同 Agent 使用不同 API）</span>
+          </label>
+          <small style="color: var(--warning); font-size: 0.75rem; display: block; margin-top: 0.25rem;" data-i18n="api.multiApi.hint">
+            ⚠️ 启用后可为每个 Agent 单独配置 API，但会自动禁用 Prompt 缓存
+          </small>
+        </div>
+        
+        <div class="form-group">
+          <label style="display: flex; align-items: center; gap: 0.5rem;">
+            <input type="checkbox" id="disableCache" style="width: auto;">
+            <span data-i18n="api.disableCache">禁用 Prompt 缓存（每回合发送完整背景规则）</span>
+          </label>
+          <small style="color: var(--muted); font-size: 0.75rem; display: block; margin-top: 0.25rem;" data-i18n="api.disableCache.hint">
+            多 API 模式启用时此选项将被自动勾选且无法取消
+          </small>
+        </div>
+        
+        <h3 data-i18n="section.error">🔄 Error Handling</h3>
+        
+        <div class="form-group">
+          <label style="display: flex; align-items: center; gap: 0.5rem;">
+            <input type="checkbox" id="retryOnFailure" checked style="width: auto;">
+            <span data-i18n="error.retry">失败时自动重试</span>
+          </label>
+          <small style="color: var(--muted); font-size: 0.75rem; display: block; margin-top: 0.25rem;" data-i18n="error.retry.hint">
+            API 调用失败时自动重试，提高成功率
+          </small>
+        </div>
+        
+        <div class="form-group">
+          <label data-i18n="error.maxRetries">最大重试次数</label>
+          <input type="number" id="maxRetries" value="3" min="1" max="99">
+          <small style="color: var(--muted); font-size: 0.75rem; display: block; margin-top: 0.25rem;" data-i18n="error.maxRetries.hint">
+            每个 Agent 失败后最多重试几次（1-99，输入99表示无限重试直到成功）
+          </small>
+        </div>
+        
+        <div class="form-group">
+          <label style="display: flex; align-items: center; gap: 0.5rem;">
+            <input type="checkbox" id="stopOnFailure" style="width: auto;">
+            <span data-i18n="error.stopOnFailure">失败时停止整个模拟</span>
+          </label>
+          <small style="color: var(--muted); font-size: 0.75rem; display: block; margin-top: 0.25rem;" data-i18n="error.stopOnFailure.hint">
+            任何 Agent 失败后立即停止模拟（即使已重试）
+          </small>
+        </div>
+        
+        <div class="flex">
+          <button id="saveConfig" class="btn-success" data-i18n="api.save">💾 保存配置</button>
+          <button id="testAPI" class="btn-secondary" data-i18n="api.test">🧪 测试连接</button>
+        </div>
+        <small style="color: var(--muted); font-size: 0.75rem; display: block; margin-top: 0.5rem;" data-i18n="api.autoSave.hint">
+          💡 提示：配置会自动保存，无需手动点击保存按钮即可导出
+        </small>
+        
+        <h3 data-i18n="section.control">▶️ Run Control</h3>
+        
+        <div class="flex">
+          <button id="startSim" class="btn-success" style="flex: 1;" data-i18n="control.start">开始模拟</button>
+          <button id="pauseSim" class="btn-warning hidden" data-i18n="control.pause">暂停</button>
+          <button id="stopSim" class="btn-danger hidden" data-i18n="control.stop">停止</button>
+        </div>
+      </section>
+    </div>
+
+    <!-- Right Panel: Results -->
+    <div>
+      <section>
+        <h2 data-i18n="section.results">📊 Simulation Results</h2>
+        
+        <div class="status-bar">
+          <span><span data-i18n="results.currentRound">Current Round</span>: <strong id="currentRound">0</strong></span>
+          <span><span data-i18n="results.status">Status</span>: <strong id="simStatus" data-i18n="results.status.notStarted">Not Started</strong></span>
+        </div>
+        
+        <div class="flex" style="margin-bottom: 1rem;">
+          <button id="exportCSV" class="btn-secondary" data-i18n="results.exportCSV">📥 导出 CSV</button>
+          <button id="exportExcel" class="btn-secondary" data-i18n="results.exportExcel">📊 导出 Excel</button>
+          <button id="exportJSON" class="btn-secondary" data-i18n="results.exportJSON">📥 导出 JSON</button>
+          <button id="clearLog" class="btn-danger" data-i18n="results.clearLog">🗑️ 清空日志</button>
+        </div>
+        
+        <div class="table-container">
+          <table class="log-table">
+            <thead>
+              <tr>
+                <th style="width: 60px;" data-i18n="results.round">Round</th>
+                <th style="width: 120px;" data-i18n="results.agent">Agent</th>
+                <th data-i18n="results.message">Message</th>
+                <th style="width: 100px;" data-i18n="results.time">Time</th>
+              </tr>
+            </thead>
+            <tbody id="logBody">
+              <tr>
+                <td colspan="4" style="text-align: center; color: var(--muted);" data-i18n="results.noData">No data</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        
+        <h3 data-i18n="section.console">🐛 Debug Console</h3>
+        <div class="console" id="console" data-i18n="console.waiting">Waiting to run...</div>
+      </section>
+    </div>
+  </main>
+
+  <script src="/static/js/i18n.js"></script>
+  <script src="/static/js/app.js"></script>
+</body>
+</html>

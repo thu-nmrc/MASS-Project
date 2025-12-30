@@ -45,19 +45,33 @@ def _resolve_root():
 
     try:
         if getattr(sys, 'frozen', False):
-            # PyInstaller 可执行
-            cwd = os.getcwd()
+            argv0 = os.path.abspath(sys.argv[0]) if sys.argv and sys.argv[0] else ""
+            argv0_dir = os.path.dirname(argv0) if argv0 else ""
+
+            exe_dir = os.path.dirname(os.path.abspath(sys.executable))
+            mei_dir = os.path.abspath(getattr(sys, "_MEIPASS", "")) if getattr(sys, "_MEIPASS", None) else ""
+
+            if argv0_dir and (not mei_dir or os.path.normcase(argv0_dir) != os.path.normcase(mei_dir)):
+                return argv0_dir
+
+            if exe_dir and (not mei_dir or os.path.normcase(exe_dir) != os.path.normcase(mei_dir)):
+                return exe_dir
+
+            cwd = os.path.abspath(os.getcwd())
             if os.path.isdir(os.path.join(cwd, 'exports')):
                 return cwd
-            exe_dir = os.path.dirname(sys.executable)
-            for candidate in [
-                exe_dir,
-                os.path.abspath(os.path.join(exe_dir, '..')),
-                os.path.abspath(os.path.join(exe_dir, '..', '..')),
-            ]:
-                if os.path.isdir(os.path.join(candidate, 'exports')):
-                    return candidate
-            return exe_dir
+
+            base_candidates = []
+            if argv0_dir:
+                base_candidates.append(argv0_dir)
+            base_candidates.append(exe_dir)
+
+            for base in base_candidates:
+                if mei_dir and os.path.normcase(base) == os.path.normcase(mei_dir):
+                    continue
+                return base
+
+            return cwd
         else:
             # 普通脚本
             script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -463,7 +477,14 @@ class RequestHandler(http.server.SimpleHTTPRequestHandler):
                 result = export_csv()
                 if result["ok"]:
                     self._headers(200)
-                    self.wfile.write(json_bytes({"status": 200, "filename": result["filename"], "message": f"Exported as {result['filename']}"}))
+                    self.wfile.write(json_bytes({
+                        "status": 200,
+                        "filename": result["filename"],
+                        "path": result.get("path", ""),
+                        "export_dir": EXPORT_DIR,
+                        "root": ROOT,
+                        "message": f"Exported as {result['filename']}"
+                    }))
                 else:
                     self._headers(500)
                     self.wfile.write(json_bytes({"status": 500, "error": result["error"]}))
@@ -474,7 +495,15 @@ class RequestHandler(http.server.SimpleHTTPRequestHandler):
                 result = export_excel()
                 if result["ok"]:
                     self._headers(200)
-                    self.wfile.write(json_bytes({"status": 200, "filename": result["filename"], "message": f"Exported as {result['filename']}", "excel_available": True}))
+                    self.wfile.write(json_bytes({
+                        "status": 200,
+                        "filename": result["filename"],
+                        "path": result.get("path", ""),
+                        "export_dir": EXPORT_DIR,
+                        "root": ROOT,
+                        "message": f"Exported as {result['filename']}",
+                        "excel_available": True
+                    }))
                 else:
                     self._headers(500)
                     self.wfile.write(json_bytes({"status": 500, "error": result["error"], "excel_available": EXCEL_AVAILABLE}))
