@@ -1,2 +1,0 @@
-# This file ensures the exports directory is tracked by git
-# Actual export files (*.csv, *.xlsx) are ignored by .gitignore
