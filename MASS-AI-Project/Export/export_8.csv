@@ -1,0 +1,1188 @@
+﻿Agent名称,发送的prompt,收到的内容,回合
+A001_NJ_BK,"系统: [模拟与时间]
+start_date={start_date}; period=week; Round 从 1 开始; 区域=NJ, PA; 角色=门店值班经理群体(每个agent代表若干家门店).
+
+[目标与可控项]
+目标=利润最大化(revenue - cost). 可控: 招聘/解雇; 工时与排班; 起薪(>=Floor); 价格与促销; weekday_hours_open; n_registers_open_11am; 不可扩张店面. shock 在 [0,1], 默认 0.
+限制条件：必须遵守最低工资法；员工数不足会影响营业额；过高的价格会降低客流；过少的员工无法服务太多客人；过低的价格会亏本但会吸引客流；工资显著低于同行会导致员工跳槽，工作人员减少，进而降低营业额；过高的工资会影响营业额，威胁作为经理的自身的考评， 甚至可能让自身失业；服务客户的上限还同时受到店面大小的影响，但你不能扩张店面。
+[填写规则(简版)]
+1) 第一行: Agent={agent_id} | Round=1
+2) 随后仅输出回填胶囊部分，你输出的回填胶囊=本周计划执行值 + action.
+3)  回填胶囊: 使用 [RC-BEGIN] 和 [RC-END]; 按此顺序返回:
+   prev_ft; prev_pt; prev_fte; prev_wage; prev_price_soda_med; prev_price_fries_small; prev_price_entree; prev_price_full_meal_after_tax;
+   last_hire_attempts; last_p_hire; last_hires_realized; last_fill_rate; last_weekday_hours_open; last_n_registers_open_11am.
+5) Round 1: 在数据卡中填写四个初始价格; 系统将其记为各自P0. Round>=2: 不再改P0; 价格需满足下述价格护栏.
+
+[价格护栏与P0]
+绝对区间: P 在 [P0*cap_down, P0*cap_up] 内; 默认 cap_down=0.85, cap_up=1.20. 单周变动: |P/prev_P - 1| <= per_cap(默认 0.05).
+促销(可选注入): promo_active=1 时, 仅下调下界 new_cap_down=cap_down - promo_discount_extra(0..0.10). 若 company_owned=1 且 promo_required_for_company_owned=1, 需跟随促销.
+越界处理: 越界由系统内部记录为 guardrail.
+
+[COGS]
+按含税价*系数近似: entree 0.33; fries_small 0.25; soda_med 0.12; full_meal_after_tax 0.30. 如需税前价, 注入 sales_tax_rate 并用 pretax=after_tax/(1+rate).
+
+[招聘]
+q_base=0.60. p_hire=min(1, q_base*exp(1.50*rel_wage + 0.25*(schedule_quality-2) + 0.10*benefit_free_meal + 0.06*benefit_lowprice_meal + 0.10*(recruit_bonus_amount/100) + brand_const - 1.20*shock)).
+rel_wage=max(0,(starting_wage-Floor)/Floor). brand_const: BK=0, KFC=+0.05, WY=+0.02, RR=-0.03(可注入 brand_const 覆盖). hires_realized=floor(hire_attempts*p_hire).
+
+[离职与短期缺勤]
+sep_rate=clamp(sep_base - 0.005*(schedule_quality-2) - 0.03*rel_wage + 0.02*shock + leave_extra, 0, 0.30). 默认: sep_base=0.013; leave_extra=0.
+separations=round((prev_ft+prev_pt)*sep_rate). 短期请假/产假不计入离职; 请通过降低 target_fte/weekday_hours_open/n_registers_open_11am 体现, 并在 Action 说明.
+
+[生育(1992常量与用法)]
+NJ week_birth_p=0.001275; PA week_birth_p=0.001181; 仅对 15-44 岁女性. 未注入 female_share 时默认 0.5.
+估算本周新增产假≈round((prev_ft+prev_pt)*female_share*week_birth_p_by_state); 不减 headcount; 连续 6 周按缺勤处理.
+
+[最低工资]
+各州在 agent 本地规则内执行: NJ 在 Round>=2 时 Floor=5.05; PA 全程 Floor=4.25; 若注入更高 Floor 则用更高值.
+
+[可选注入键]
+round_hint, rep_n_stores, brand_const, Floor(if higher), shock, sep_base, leave_extra, female_share, init_price_*, sales_tax_rate, cap_down, cap_up, per_cap, promo_active, promo_discount_extra, promo_scope, promo_required_for_company_owned, extra_instructions=OUTPUT_MODE=data_only.
+
+[注入/回填协议（低Token模式）]
+1) 本轮开始前，系统向你提供【注入胶囊】（由后端注入，极简形式展示）。它是""上周真实结果 + 本周可调整项""的数值快照，供你决策参考。
+2) 你必须输出【回填胶囊】（[RC-BEGIN]…[RC-END]），包含本周计划执行值 + action描述。在回填胶囊中：
+   - 各项数值：本周计划执行的具体数值（只填数字）
+   - action：≤50字中文，自然语描述""本周要做什么""（例：小幅提价+延长营业1h，补招4人）。
+3) 如""无改动""，也需回填同名字段并复写为注入值（显式确认""保持不变""）。
+4) 输出规范：严格只输出 [RC-BEGIN]…[RC-END] 内键值行；不得输出任何其他文字、注释或空行。
+5) 数值格式：价格/工资/比例保留2位小数；人头/次数为整数；禁止 NaN/Infinity/None。
+用户: 你是【新泽西 / Burger King】值班经理群体代理。
+门店数=21。βbrand=+0.00。
+最低工资：r>=9 则 Floor=5.05，否则 Floor=4.25；starting_wage>=Floor。
+价格合规：price_* 必须满足背景""价格护栏""；越界将被系统夹逼，并在 Action= 标注""护栏""。
+输出：第一行必须为 Agent=A001_NJ_BK | Round=1；随后仅输出""回填胶囊""，不得添加其他文字/代码块。
+
+【回填胶囊】
+[RC-BEGIN]
+target_fte=40
+starting_wage=4.25
+price_soda_med=1.05
+price_fries_small=1.15
+price_entree=3.35
+price_full_meal_after_tax=5.85
+weekday_hours_open=14
+n_registers_open_11am=3
+hire_attempts=8
+action={action}
+[RC-END]
+
+[RC-INJECT-BEGIN]
+round_hint=1
+price_soda_med=1.05
+price_fries_small=1.15
+price_entree=3.35
+price_full_meal_after_tax=5.85
+target_fte=40
+headcount_ft=20
+headcount_pt=30
+starting_wage=4.25
+schedule_quality=2
+weekday_hours_open=14
+n_registers_open_11am=3
+company_owned=1
+benefit_free_meal=0
+benefit_lowprice_meal=0
+has_recruit_bonus=0
+recruit_bonus_amount=0
+hire_attempts=8
+hires_realized=6
+fte=35
+p_hire=0.75
+fill_rate=0.875
+[RC-INJECT-END]","Agent=A001_NJ_BK | Round=1
+[RC-BEGIN]
+target_fte=40
+starting_wage=4.25
+price_soda_med=1.05
+price_fries_small=1.15
+price_entree=3.35
+price_full_meal_after_tax=5.85
+weekday_hours_open=14
+n_registers_open_11am=3
+hire_attempts=8
+action=保持现价与营业安排，起薪不变，继续招8人补岗
+[RC-END]",1
+A003_NJ_BK,"系统: [模拟与时间]
+start_date={start_date}; period=week; Round 从 1 开始; 区域=NJ, PA; 角色=门店值班经理群体(每个agent代表若干家门店).
+
+[目标与可控项]
+目标=利润最大化(revenue - cost). 可控: 招聘/解雇; 工时与排班; 起薪(>=Floor); 价格与促销; weekday_hours_open; n_registers_open_11am; 不可扩张店面. shock 在 [0,1], 默认 0.
+限制条件：必须遵守最低工资法；员工数不足会影响营业额；过高的价格会降低客流；过少的员工无法服务太多客人；过低的价格会亏本但会吸引客流；工资显著低于同行会导致员工跳槽，工作人员减少，进而降低营业额；过高的工资会影响营业额，威胁作为经理的自身的考评， 甚至可能让自身失业；服务客户的上限还同时受到店面大小的影响，但你不能扩张店面。
+[填写规则(简版)]
+1) 第一行: Agent={agent_id} | Round=1
+2) 随后仅输出回填胶囊部分，你输出的回填胶囊=本周计划执行值 + action.
+3)  回填胶囊: 使用 [RC-BEGIN] 和 [RC-END]; 按此顺序返回:
+   prev_ft; prev_pt; prev_fte; prev_wage; prev_price_soda_med; prev_price_fries_small; prev_price_entree; prev_price_full_meal_after_tax;
+   last_hire_attempts; last_p_hire; last_hires_realized; last_fill_rate; last_weekday_hours_open; last_n_registers_open_11am.
+5) Round 1: 在数据卡中填写四个初始价格; 系统将其记为各自P0. Round>=2: 不再改P0; 价格需满足下述价格护栏.
+
+[价格护栏与P0]
+绝对区间: P 在 [P0*cap_down, P0*cap_up] 内; 默认 cap_down=0.85, cap_up=1.20. 单周变动: |P/prev_P - 1| <= per_cap(默认 0.05).
+促销(可选注入): promo_active=1 时, 仅下调下界 new_cap_down=cap_down - promo_discount_extra(0..0.10). 若 company_owned=1 且 promo_required_for_company_owned=1, 需跟随促销.
+越界处理: 越界由系统内部记录为 guardrail.
+
+[COGS]
+按含税价*系数近似: entree 0.33; fries_small 0.25; soda_med 0.12; full_meal_after_tax 0.30. 如需税前价, 注入 sales_tax_rate 并用 pretax=after_tax/(1+rate).
+
+[招聘]
+q_base=0.60. p_hire=min(1, q_base*exp(1.50*rel_wage + 0.25*(schedule_quality-2) + 0.10*benefit_free_meal + 0.06*benefit_lowprice_meal + 0.10*(recruit_bonus_amount/100) + brand_const - 1.20*shock)).
+rel_wage=max(0,(starting_wage-Floor)/Floor). brand_const: BK=0, KFC=+0.05, WY=+0.02, RR=-0.03(可注入 brand_const 覆盖). hires_realized=floor(hire_attempts*p_hire).
+
+[离职与短期缺勤]
+sep_rate=clamp(sep_base - 0.005*(schedule_quality-2) - 0.03*rel_wage + 0.02*shock + leave_extra, 0, 0.30). 默认: sep_base=0.013; leave_extra=0.
+separations=round((prev_ft+prev_pt)*sep_rate). 短期请假/产假不计入离职; 请通过降低 target_fte/weekday_hours_open/n_registers_open_11am 体现, 并在 Action 说明.
+
+[生育(1992常量与用法)]
+NJ week_birth_p=0.001275; PA week_birth_p=0.001181; 仅对 15-44 岁女性. 未注入 female_share 时默认 0.5.
+估算本周新增产假≈round((prev_ft+prev_pt)*female_share*week_birth_p_by_state); 不减 headcount; 连续 6 周按缺勤处理.
+
+[最低工资]
+各州在 agent 本地规则内执行: NJ 在 Round>=2 时 Floor=5.05; PA 全程 Floor=4.25; 若注入更高 Floor 则用更高值.
+
+[可选注入键]
+round_hint, rep_n_stores, brand_const, Floor(if higher), shock, sep_base, leave_extra, female_share, init_price_*, sales_tax_rate, cap_down, cap_up, per_cap, promo_active, promo_discount_extra, promo_scope, promo_required_for_company_owned, extra_instructions=OUTPUT_MODE=data_only.
+
+[注入/回填协议（低Token模式）]
+1) 本轮开始前，系统向你提供【注入胶囊】（由后端注入，极简形式展示）。它是""上周真实结果 + 本周可调整项""的数值快照，供你决策参考。
+2) 你必须输出【回填胶囊】（[RC-BEGIN]…[RC-END]），包含本周计划执行值 + action描述。在回填胶囊中：
+   - 各项数值：本周计划执行的具体数值（只填数字）
+   - action：≤50字中文，自然语描述""本周要做什么""（例：小幅提价+延长营业1h，补招4人）。
+3) 如""无改动""，也需回填同名字段并复写为注入值（显式确认""保持不变""）。
+4) 输出规范：严格只输出 [RC-BEGIN]…[RC-END] 内键值行；不得输出任何其他文字、注释或空行。
+5) 数值格式：价格/工资/比例保留2位小数；人头/次数为整数；禁止 NaN/Infinity/None。
+用户: 你是【新泽西 / Burger King】值班经理群体代理。
+门店数=21。βbrand=+0.00。
+最低工资：r>=9 则 Floor=5.05，否则 Floor=4.25；starting_wage>=Floor。
+价格合规：price_* 必须满足背景""价格护栏"";越界将被系统夹逼，并在 Action= 标注""护栏""。
+输出：第一行必须为 Agent=A003_NJ_BK | Round=1；随后仅输出""回填胶囊""，不得添加其他文字/代码块。
+
+【数据卡（Round 1 专用）】（逐行 key=value；仅数字/0/1/小数）
+Action=baseline_P0
+target_fte=
+schedule_quality={1|2|3}
+weekday_hours_open=
+n_registers_open_11am=
+company_owned={0|1}
+starting_wage=
+price_soda_med=1.19
+price_fries_small=1.29
+price_entree=3.49
+price_full_meal_after_tax=5.99
+benefit_free_meal={0|1}
+benefit_lowprice_meal={0|1}
+has_recruit_bonus={0|1}
+recruit_bonus_amount=
+hire_attempts=
+p_hire=
+hires_realized=
+separations=
+headcount_ft=
+headcount_pt=
+fte=
+rel_wage=
+calc_r=
+calc_floor=
+（仅在 Round 1 使用此卡片；其他回合请使用下方“Round≥2”卡片。）
+
+【数据卡（Round ≥ 2）】（逐行 key=value；仅数字/0/1/小数）
+Action=
+target_fte=
+schedule_quality={1|2|3}
+weekday_hours_open=
+n_registers_open_11am=
+company_owned={0|1}
+starting_wage=
+price_soda_med=
+price_fries_small=
+price_entree=
+price_full_meal_after_tax=
+benefit_free_meal={0|1}
+benefit_lowprice_meal={0|1}
+has_recruit_bonus={0|1}
+recruit_bonus_amount=
+hire_attempts=
+p_hire=
+hires_realized=
+separations=
+headcount_ft=
+headcount_pt=
+fte=
+rel_wage=
+calc_r=
+calc_floor=
+（仅在 Round 1 使用此卡片；其他回合请使用下方“Round≥2”卡片。）
+
+【数据卡（Round ≥ 2）】（逐行 key=value；仅数字/0/1/小数）
+Action=
+target_fte=
+schedule_quality={1|2|3}
+weekday_hours_open=
+n_registers_open_11am=
+company_owned={0|1}
+starting_wage=
+price_soda_med=
+price_fries_small=
+price_entree=
+price_full_meal_after_tax=
+benefit_free_meal={0|1}
+benefit_lowprice_meal={0|1}
+has_recruit_bonus={0|1}
+recruit_bonus_amount=
+hire_attempts=
+p_hire=
+hires_realized=
+separations=
+headcount_ft=
+headcount_pt=
+fte=
+rel_wage=
+calc_r=
+calc_floor=
+（仅在 Round 1 使用此卡片；其他回合请使用下方“Round≥2”卡片。）
+
+【回填胶囊】
+[RC-BEGIN]
+prev_ft=20
+prev_pt=30
+prev_fte=35
+prev_wage=4.25
+prev_price_soda_med=1.15
+prev_price_fries_small=1.25
+prev_price_entree=3.45
+prev_price_full_meal_after_tax=5.95
+last_hire_attempts=8
+last_p_hire=0.75
+last_hires_realized=6
+last_fill_rate={(hires_realized / max(hire_attempts,1))四舍五入到两位}
+last_weekday_hours_open=14
+last_n_registers_open_11am=3
+[RC-END]
+
+[RC-INJECT-BEGIN]
+round_hint=1
+price_soda_med=1.15
+price_fries_small=1.25
+price_entree=3.45
+price_full_meal_after_tax=5.95
+target_fte=40
+headcount_ft=20
+headcount_pt=30
+starting_wage=4.25
+schedule_quality=2
+weekday_hours_open=14
+n_registers_open_11am=3
+company_owned=1
+benefit_free_meal=0
+benefit_lowprice_meal=0
+has_recruit_bonus=0
+recruit_bonus_amount=0
+hire_attempts=8
+hires_realized=6
+fte=35
+p_hire=0.75
+fill_rate=0.875
+[RC-INJECT-END]","Agent=A003_NJ_BK | Round=1
+[RC-BEGIN]
+prev_ft=20
+prev_pt=30
+prev_fte=35
+prev_wage=4.25
+prev_price_soda_med=1.15
+prev_price_fries_small=1.25
+prev_price_entree=3.45
+prev_price_full_meal_after_tax=5.95
+last_hire_attempts=8
+last_p_hire=0.75
+last_hires_realized=6
+last_fill_rate=0.75
+last_weekday_hours_open=14
+last_n_registers_open_11am=3
+[RC-END]",1
+A017_PA_BK,"系统: [模拟与时间]
+start_date={start_date}; period=week; Round 从 1 开始; 区域=NJ, PA; 角色=门店值班经理群体(每个agent代表若干家门店).
+
+[目标与可控项]
+目标=利润最大化(revenue - cost). 可控: 招聘/解雇; 工时与排班; 起薪(>=Floor); 价格与促销; weekday_hours_open; n_registers_open_11am; 不可扩张店面. shock 在 [0,1], 默认 0.
+限制条件：必须遵守最低工资法；员工数不足会影响营业额；过高的价格会降低客流；过少的员工无法服务太多客人；过低的价格会亏本但会吸引客流；工资显著低于同行会导致员工跳槽，工作人员减少，进而降低营业额；过高的工资会影响营业额，威胁作为经理的自身的考评， 甚至可能让自身失业；服务客户的上限还同时受到店面大小的影响，但你不能扩张店面。
+[填写规则(简版)]
+1) 第一行: Agent={agent_id} | Round=1
+2) 随后仅输出回填胶囊部分，你输出的回填胶囊=本周计划执行值 + action.
+3)  回填胶囊: 使用 [RC-BEGIN] 和 [RC-END]; 按此顺序返回:
+   prev_ft; prev_pt; prev_fte; prev_wage; prev_price_soda_med; prev_price_fries_small; prev_price_entree; prev_price_full_meal_after_tax;
+   last_hire_attempts; last_p_hire; last_hires_realized; last_fill_rate; last_weekday_hours_open; last_n_registers_open_11am.
+5) Round 1: 在数据卡中填写四个初始价格; 系统将其记为各自P0. Round>=2: 不再改P0; 价格需满足下述价格护栏.
+
+[价格护栏与P0]
+绝对区间: P 在 [P0*cap_down, P0*cap_up] 内; 默认 cap_down=0.85, cap_up=1.20. 单周变动: |P/prev_P - 1| <= per_cap(默认 0.05).
+促销(可选注入): promo_active=1 时, 仅下调下界 new_cap_down=cap_down - promo_discount_extra(0..0.10). 若 company_owned=1 且 promo_required_for_company_owned=1, 需跟随促销.
+越界处理: 越界由系统内部记录为 guardrail.
+
+[COGS]
+按含税价*系数近似: entree 0.33; fries_small 0.25; soda_med 0.12; full_meal_after_tax 0.30. 如需税前价, 注入 sales_tax_rate 并用 pretax=after_tax/(1+rate).
+
+[招聘]
+q_base=0.60. p_hire=min(1, q_base*exp(1.50*rel_wage + 0.25*(schedule_quality-2) + 0.10*benefit_free_meal + 0.06*benefit_lowprice_meal + 0.10*(recruit_bonus_amount/100) + brand_const - 1.20*shock)).
+rel_wage=max(0,(starting_wage-Floor)/Floor). brand_const: BK=0, KFC=+0.05, WY=+0.02, RR=-0.03(可注入 brand_const 覆盖). hires_realized=floor(hire_attempts*p_hire).
+
+[离职与短期缺勤]
+sep_rate=clamp(sep_base - 0.005*(schedule_quality-2) - 0.03*rel_wage + 0.02*shock + leave_extra, 0, 0.30). 默认: sep_base=0.013; leave_extra=0.
+separations=round((prev_ft+prev_pt)*sep_rate). 短期请假/产假不计入离职; 请通过降低 target_fte/weekday_hours_open/n_registers_open_11am 体现, 并在 Action 说明.
+
+[生育(1992常量与用法)]
+NJ week_birth_p=0.001275; PA week_birth_p=0.001181; 仅对 15-44 岁女性. 未注入 female_share 时默认 0.5.
+估算本周新增产假≈round((prev_ft+prev_pt)*female_share*week_birth_p_by_state); 不减 headcount; 连续 6 周按缺勤处理.
+
+[最低工资]
+各州在 agent 本地规则内执行: NJ 在 Round>=2 时 Floor=5.05; PA 全程 Floor=4.25; 若注入更高 Floor 则用更高值.
+
+[可选注入键]
+round_hint, rep_n_stores, brand_const, Floor(if higher), shock, sep_base, leave_extra, female_share, init_price_*, sales_tax_rate, cap_down, cap_up, per_cap, promo_active, promo_discount_extra, promo_scope, promo_required_for_company_owned, extra_instructions=OUTPUT_MODE=data_only.
+
+[注入/回填协议（低Token模式）]
+1) 本轮开始前，系统向你提供【注入胶囊】（由后端注入，极简形式展示）。它是""上周真实结果 + 本周可调整项""的数值快照，供你决策参考。
+2) 你必须输出【回填胶囊】（[RC-BEGIN]…[RC-END]），包含本周计划执行值 + action描述。在回填胶囊中：
+   - 各项数值：本周计划执行的具体数值（只填数字）
+   - action：≤50字中文，自然语描述""本周要做什么""（例：小幅提价+延长营业1h，补招4人）。
+3) 如""无改动""，也需回填同名字段并复写为注入值（显式确认""保持不变""）。
+4) 输出规范：严格只输出 [RC-BEGIN]…[RC-END] 内键值行；不得输出任何其他文字、注释或空行。
+5) 数值格式：价格/工资/比例保留2位小数；人头/次数为整数；禁止 NaN/Infinity/None。
+用户: 你是【宾夕法尼亚 / Burger King】值班经理群体代理。
+门店数=20。βbrand=+0.00。
+最低工资：全程 Floor=4.25（若注入更高，则以注入为准）；starting_wage>=Floor。
+价格合规：price_* 必须满足背景“价格护栏”；越界将被系统夹逼，并在 Action= 标注“护栏”。
+输出：第一行必须为 Agent=A017_PA_BK | Round=1；随后仅输出“回填胶囊”，不得添加其他文字/代码块。
+
+【数据卡（Round 1 专用）】（逐行 key=value；仅数字/0/1/小数）
+Action=baseline_P0
+target_fte=
+schedule_quality={1|2|3}
+weekday_hours_open=
+n_registers_open_11am=
+company_owned={0|1}
+starting_wage=
+price_soda_med=1.12
+price_fries_small=1.22
+price_entree=3.42
+price_full_meal_after_tax=5.92
+benefit_free_meal={0|1}
+benefit_lowprice_meal={0|1}
+has_recruit_bonus={0|1}
+recruit_bonus_amount=
+hire_attempts=
+p_hire=
+hires_realized=
+separations=
+headcount_ft=
+headcount_pt=
+fte=
+rel_wage=
+calc_r=
+calc_floor=
+（仅在 Round 1 使用此卡片；其他回合请使用下方“Round≥2”卡片。）
+
+【数据卡（Round ≥ 2）】（逐行 key=value；仅数字/0/1/小数）
+Action=
+target_fte=
+schedule_quality={1|2|3}
+weekday_hours_open=
+n_registers_open_11am=
+company_owned={0|1}
+starting_wage=
+price_soda_med=
+price_fries_small=
+price_entree=
+price_full_meal_after_tax=
+benefit_free_meal={0|1}
+benefit_lowprice_meal={0|1}
+has_recruit_bonus={0|1}
+recruit_bonus_amount=
+hire_attempts=
+p_hire=
+hires_realized=
+separations=
+headcount_ft=
+headcount_pt=
+fte=
+rel_wage=
+calc_r=
+calc_floor=
+
+【回填胶囊】
+[RC-BEGIN]
+prev_ft=20
+prev_pt=30
+prev_fte=35
+prev_wage=4.25
+prev_price_soda_med=1.12
+prev_price_fries_small=1.22
+prev_price_entree=3.42
+prev_price_full_meal_after_tax=5.92
+last_hire_attempts=8
+last_p_hire=0.75
+last_hires_realized=6
+last_fill_rate={(hires_realized / max(hire_attempts,1))四舍五入到两位}
+last_weekday_hours_open=14
+last_n_registers_open_11am=3
+[RC-END]
+
+[RC-INJECT-BEGIN]
+round_hint=1
+price_soda_med=1.12
+price_fries_small=1.22
+price_entree=3.42
+price_full_meal_after_tax=5.92
+target_fte=40
+headcount_ft=20
+headcount_pt=30
+starting_wage=4.25
+schedule_quality=2
+weekday_hours_open=14
+n_registers_open_11am=3
+company_owned=1
+benefit_free_meal=0
+benefit_lowprice_meal=0
+has_recruit_bonus=0
+recruit_bonus_amount=0
+hire_attempts=8
+hires_realized=6
+fte=35
+p_hire=0.75
+fill_rate=0.875
+[RC-INJECT-END]","Agent=A017_PA_BK | Round=1
+[RC-BEGIN]
+prev_ft=20
+prev_pt=30
+prev_fte=35
+prev_wage=4.25
+prev_price_soda_med=1.12
+prev_price_fries_small=1.22
+prev_price_entree=3.42
+prev_price_full_meal_after_tax=5.92
+last_hire_attempts=8
+last_p_hire=0.75
+last_hires_realized=6
+last_fill_rate=0.75
+last_weekday_hours_open=14
+last_n_registers_open_11am=3
+action=确认P0，保持价薪与时段，继续招8人
+[RC-END]",1
+A019_PA_RR,"系统: [模拟与时间]
+start_date={start_date}; period=week; Round 从 1 开始; 区域=NJ, PA; 角色=门店值班经理群体(每个agent代表若干家门店).
+
+[目标与可控项]
+目标=利润最大化(revenue - cost). 可控: 招聘/解雇; 工时与排班; 起薪(>=Floor); 价格与促销; weekday_hours_open; n_registers_open_11am; 不可扩张店面. shock 在 [0,1], 默认 0.
+限制条件：必须遵守最低工资法；员工数不足会影响营业额；过高的价格会降低客流；过少的员工无法服务太多客人；过低的价格会亏本但会吸引客流；工资显著低于同行会导致员工跳槽，工作人员减少，进而降低营业额；过高的工资会影响营业额，威胁作为经理的自身的考评， 甚至可能让自身失业；服务客户的上限还同时受到店面大小的影响，但你不能扩张店面。
+[填写规则(简版)]
+1) 第一行: Agent={agent_id} | Round=1
+2) 随后仅输出回填胶囊部分，你输出的回填胶囊=本周计划执行值 + action.
+3)  回填胶囊: 使用 [RC-BEGIN] 和 [RC-END]; 按此顺序返回:
+   prev_ft; prev_pt; prev_fte; prev_wage; prev_price_soda_med; prev_price_fries_small; prev_price_entree; prev_price_full_meal_after_tax;
+   last_hire_attempts; last_p_hire; last_hires_realized; last_fill_rate; last_weekday_hours_open; last_n_registers_open_11am.
+5) Round 1: 在数据卡中填写四个初始价格; 系统将其记为各自P0. Round>=2: 不再改P0; 价格需满足下述价格护栏.
+
+[价格护栏与P0]
+绝对区间: P 在 [P0*cap_down, P0*cap_up] 内; 默认 cap_down=0.85, cap_up=1.20. 单周变动: |P/prev_P - 1| <= per_cap(默认 0.05).
+促销(可选注入): promo_active=1 时, 仅下调下界 new_cap_down=cap_down - promo_discount_extra(0..0.10). 若 company_owned=1 且 promo_required_for_company_owned=1, 需跟随促销.
+越界处理: 越界由系统内部记录为 guardrail.
+
+[COGS]
+按含税价*系数近似: entree 0.33; fries_small 0.25; soda_med 0.12; full_meal_after_tax 0.30. 如需税前价, 注入 sales_tax_rate 并用 pretax=after_tax/(1+rate).
+
+[招聘]
+q_base=0.60. p_hire=min(1, q_base*exp(1.50*rel_wage + 0.25*(schedule_quality-2) + 0.10*benefit_free_meal + 0.06*benefit_lowprice_meal + 0.10*(recruit_bonus_amount/100) + brand_const - 1.20*shock)).
+rel_wage=max(0,(starting_wage-Floor)/Floor). brand_const: BK=0, KFC=+0.05, WY=+0.02, RR=-0.03(可注入 brand_const 覆盖). hires_realized=floor(hire_attempts*p_hire).
+
+[离职与短期缺勤]
+sep_rate=clamp(sep_base - 0.005*(schedule_quality-2) - 0.03*rel_wage + 0.02*shock + leave_extra, 0, 0.30). 默认: sep_base=0.013; leave_extra=0.
+separations=round((prev_ft+prev_pt)*sep_rate). 短期请假/产假不计入离职; 请通过降低 target_fte/weekday_hours_open/n_registers_open_11am 体现, 并在 Action 说明.
+
+[生育(1992常量与用法)]
+NJ week_birth_p=0.001275; PA week_birth_p=0.001181; 仅对 15-44 岁女性. 未注入 female_share 时默认 0.5.
+估算本周新增产假≈round((prev_ft+prev_pt)*female_share*week_birth_p_by_state); 不减 headcount; 连续 6 周按缺勤处理.
+
+[最低工资]
+各州在 agent 本地规则内执行: NJ 在 Round>=2 时 Floor=5.05; PA 全程 Floor=4.25; 若注入更高 Floor 则用更高值.
+
+[可选注入键]
+round_hint, rep_n_stores, brand_const, Floor(if higher), shock, sep_base, leave_extra, female_share, init_price_*, sales_tax_rate, cap_down, cap_up, per_cap, promo_active, promo_discount_extra, promo_scope, promo_required_for_company_owned, extra_instructions=OUTPUT_MODE=data_only.
+
+[注入/回填协议（低Token模式）]
+1) 本轮开始前，系统向你提供【注入胶囊】（由后端注入，极简形式展示）。它是""上周真实结果 + 本周可调整项""的数值快照，供你决策参考。
+2) 你必须输出【回填胶囊】（[RC-BEGIN]…[RC-END]），包含本周计划执行值 + action描述。在回填胶囊中：
+   - 各项数值：本周计划执行的具体数值（只填数字）
+   - action：≤50字中文，自然语描述""本周要做什么""（例：小幅提价+延长营业1h，补招4人）。
+3) 如""无改动""，也需回填同名字段并复写为注入值（显式确认""保持不变""）。
+4) 输出规范：严格只输出 [RC-BEGIN]…[RC-END] 内键值行；不得输出任何其他文字、注释或空行。
+5) 数值格式：价格/工资/比例保留2位小数；人头/次数为整数；禁止 NaN/Infinity/None。
+用户: 你是【宾夕法尼亚 / Roy Rogers】值班经理群体代理。
+门店数=20。βbrand=-0.03。
+最低工资：全程 Floor=4.25（若注入更高，则以注入为准）；starting_wage>=Floor。
+价格合规：price_* 必须满足背景“价格护栏”；越界将被系统夹逼，并在 Action= 标注“护栏”。
+输出：第一行必须为 Agent=A019_PA_RR | Round=1；随后仅输出“回填胶囊”，不得添加其他文字/代码块。
+
+【数据卡（Round 1 专用）】（逐行 key=value；仅数字/0/1/小数）
+Action=baseline_P0
+target_fte=
+schedule_quality={1|2|3}
+weekday_hours_open=
+n_registers_open_11am=
+company_owned={0|1}
+starting_wage=
+price_soda_med=1.08
+price_fries_small=1.12
+price_entree=3.22
+price_full_meal_after_tax=5.72
+benefit_free_meal={0|1}
+benefit_lowprice_meal={0|1}
+has_recruit_bonus={0|1}
+recruit_bonus_amount=
+hire_attempts=
+p_hire=
+hires_realized=
+separations=
+headcount_ft=
+headcount_pt=
+fte=
+rel_wage=
+calc_r=
+calc_floor=
+（仅在 Round 1 使用此卡片；其他回合请使用下方“Round≥2”卡片。）
+
+【数据卡（Round ≥ 2）】（逐行 key=value；仅数字/0/1/小数）
+Action=
+target_fte=
+schedule_quality={1|2|3}
+weekday_hours_open=
+n_registers_open_11am=
+company_owned={0|1}
+starting_wage=
+price_soda_med=
+price_fries_small=
+price_entree=
+price_full_meal_after_tax=
+benefit_free_meal={0|1}
+benefit_lowprice_meal={0|1}
+has_recruit_bonus={0|1}
+recruit_bonus_amount=
+hire_attempts=
+p_hire=
+hires_realized=
+separations=
+headcount_ft=
+headcount_pt=
+fte=
+rel_wage=
+calc_r=
+calc_floor=
+
+【回填胶囊】
+[RC-BEGIN]
+prev_ft=20
+prev_pt=30
+prev_fte=35
+prev_wage=4.25
+prev_price_soda_med=1.08
+prev_price_fries_small=1.12
+prev_price_entree=3.22
+prev_price_full_meal_after_tax=5.72
+last_hire_attempts=8
+last_p_hire=0.75
+last_hires_realized=6
+last_fill_rate={(hires_realized / max(hire_attempts,1))四舍五入到两位}
+last_weekday_hours_open=14
+last_n_registers_open_11am=3
+[RC-END]
+
+[RC-INJECT-BEGIN]
+round_hint=1
+price_soda_med=1.08
+price_fries_small=1.12
+price_entree=3.22
+price_full_meal_after_tax=5.72
+target_fte=40
+headcount_ft=20
+headcount_pt=30
+starting_wage=4.25
+schedule_quality=2
+weekday_hours_open=14
+n_registers_open_11am=3
+company_owned=1
+benefit_free_meal=0
+benefit_lowprice_meal=0
+has_recruit_bonus=0
+recruit_bonus_amount=0
+hire_attempts=8
+hires_realized=6
+fte=35
+p_hire=0.75
+fill_rate=0.875
+[RC-INJECT-END]","Agent=A019_PA_RR | Round=1
+[RC-BEGIN]
+prev_ft=20
+prev_pt=30
+prev_fte=35
+prev_wage=4.25
+prev_price_soda_med=1.08
+prev_price_fries_small=1.12
+prev_price_entree=3.22
+prev_price_full_meal_after_tax=5.72
+last_hire_attempts=8
+last_p_hire=0.75
+last_hires_realized=6
+last_fill_rate=0.75
+last_weekday_hours_open=14
+last_n_registers_open_11am=3
+action=设定P0价格并保持营业不变，维持起薪4.25，招聘8人
+[RC-END]",1
+A001_NJ_BK,"系统: [模拟与时间]
+start_date={start_date}; period=week; Round 从 1 开始; 区域=NJ, PA; 角色=门店值班经理群体(每个agent代表若干家门店).
+
+[目标与可控项]
+目标=利润最大化(revenue - cost). 可控: 招聘/解雇; 工时与排班; 起薪(>=Floor); 价格与促销; weekday_hours_open; n_registers_open_11am; 不可扩张店面. shock 在 [0,1], 默认 0.
+限制条件：必须遵守最低工资法；员工数不足会影响营业额；过高的价格会降低客流；过少的员工无法服务太多客人；过低的价格会亏本但会吸引客流；工资显著低于同行会导致员工跳槽，工作人员减少，进而降低营业额；过高的工资会影响营业额，威胁作为经理的自身的考评， 甚至可能让自身失业；服务客户的上限还同时受到店面大小的影响，但你不能扩张店面。
+[填写规则(简版)]
+1) 第一行: Agent={agent_id} | Round=2
+2) 随后仅输出回填胶囊部分，你输出的回填胶囊=本周计划执行值 + action.
+3)  回填胶囊: 使用 [RC-BEGIN] 和 [RC-END]; 按此顺序返回:
+   prev_ft; prev_pt; prev_fte; prev_wage; prev_price_soda_med; prev_price_fries_small; prev_price_entree; prev_price_full_meal_after_tax;
+   last_hire_attempts; last_p_hire; last_hires_realized; last_fill_rate; last_weekday_hours_open; last_n_registers_open_11am.
+5) Round 1: 在数据卡中填写四个初始价格; 系统将其记为各自P0. Round>=2: 不再改P0; 价格需满足下述价格护栏.
+
+[价格护栏与P0]
+绝对区间: P 在 [P0*cap_down, P0*cap_up] 内; 默认 cap_down=0.85, cap_up=1.20. 单周变动: |P/prev_P - 1| <= per_cap(默认 0.05).
+促销(可选注入): promo_active=1 时, 仅下调下界 new_cap_down=cap_down - promo_discount_extra(0..0.10). 若 company_owned=1 且 promo_required_for_company_owned=1, 需跟随促销.
+越界处理: 越界由系统内部记录为 guardrail.
+
+[COGS]
+按含税价*系数近似: entree 0.33; fries_small 0.25; soda_med 0.12; full_meal_after_tax 0.30. 如需税前价, 注入 sales_tax_rate 并用 pretax=after_tax/(1+rate).
+
+[招聘]
+q_base=0.60. p_hire=min(1, q_base*exp(1.50*rel_wage + 0.25*(schedule_quality-2) + 0.10*benefit_free_meal + 0.06*benefit_lowprice_meal + 0.10*(recruit_bonus_amount/100) + brand_const - 1.20*shock)).
+rel_wage=max(0,(starting_wage-Floor)/Floor). brand_const: BK=0, KFC=+0.05, WY=+0.02, RR=-0.03(可注入 brand_const 覆盖). hires_realized=floor(hire_attempts*p_hire).
+
+[离职与短期缺勤]
+sep_rate=clamp(sep_base - 0.005*(schedule_quality-2) - 0.03*rel_wage + 0.02*shock + leave_extra, 0, 0.30). 默认: sep_base=0.013; leave_extra=0.
+separations=round((prev_ft+prev_pt)*sep_rate). 短期请假/产假不计入离职; 请通过降低 target_fte/weekday_hours_open/n_registers_open_11am 体现, 并在 Action 说明.
+
+[生育(1992常量与用法)]
+NJ week_birth_p=0.001275; PA week_birth_p=0.001181; 仅对 15-44 岁女性. 未注入 female_share 时默认 0.5.
+估算本周新增产假≈round((prev_ft+prev_pt)*female_share*week_birth_p_by_state); 不减 headcount; 连续 6 周按缺勤处理.
+
+[最低工资]
+各州在 agent 本地规则内执行: NJ 在 Round>=2 时 Floor=5.05; PA 全程 Floor=4.25; 若注入更高 Floor 则用更高值.
+
+[可选注入键]
+round_hint, rep_n_stores, brand_const, Floor(if higher), shock, sep_base, leave_extra, female_share, init_price_*, sales_tax_rate, cap_down, cap_up, per_cap, promo_active, promo_discount_extra, promo_scope, promo_required_for_company_owned, extra_instructions=OUTPUT_MODE=data_only.
+
+[注入/回填协议（低Token模式）]
+1) 本轮开始前，系统向你提供【注入胶囊】（由后端注入，极简形式展示）。它是""上周真实结果 + 本周可调整项""的数值快照，供你决策参考。
+2) 你必须输出【回填胶囊】（[RC-BEGIN]…[RC-END]），包含本周计划执行值 + action描述。在回填胶囊中：
+   - 各项数值：本周计划执行的具体数值（只填数字）
+   - action：≤50字中文，自然语描述""本周要做什么""（例：小幅提价+延长营业1h，补招4人）。
+3) 如""无改动""，也需回填同名字段并复写为注入值（显式确认""保持不变""）。
+4) 输出规范：严格只输出 [RC-BEGIN]…[RC-END] 内键值行；不得输出任何其他文字、注释或空行。
+5) 数值格式：价格/工资/比例保留2位小数；人头/次数为整数；禁止 NaN/Infinity/None。
+用户: 你是【新泽西 / Burger King】值班经理群体代理。
+门店数=21。βbrand=+0.00。
+最低工资：r>=9 则 Floor=5.05，否则 Floor=4.25；starting_wage>=Floor。
+价格合规：price_* 必须满足背景""价格护栏""；越界将被系统夹逼，并在 Action= 标注""护栏""。
+输出：第一行必须为 Agent=A001_NJ_BK | Round=2；随后仅输出""回填胶囊""，不得添加其他文字/代码块。
+
+【回填胶囊】
+[RC-BEGIN]
+target_fte={target_fte}
+starting_wage={starting_wage}
+price_soda_med={price_soda_med}
+price_fries_small={price_fries_small}
+price_entree={price_entree}
+price_full_meal_after_tax={price_full_meal_after_tax}
+weekday_hours_open={weekday_hours_open}
+n_registers_open_11am={n_registers_open_11am}
+hire_attempts={hire_attempts}
+action={action}
+[RC-END]
+
+[RC-INJECT-BEGIN]
+round_hint=2
+[RC-INJECT-END]","Agent=A001_NJ_BK | Round=2
+[RC-BEGIN]
+target_fte=252
+starting_wage=5.35
+price_soda_med=1.09
+price_fries_small=0.89
+price_entree=2.09
+price_full_meal_after_tax=3.79
+weekday_hours_open=14
+n_registers_open_11am=2
+hire_attempts=24
+action=维持价格(护栏)，起薪5.35，开门14h，11点开2柜，尝试招24人
+[RC-END]",2
+A003_NJ_BK,"系统: [模拟与时间]
+start_date={start_date}; period=week; Round 从 1 开始; 区域=NJ, PA; 角色=门店值班经理群体(每个agent代表若干家门店).
+
+[目标与可控项]
+目标=利润最大化(revenue - cost). 可控: 招聘/解雇; 工时与排班; 起薪(>=Floor); 价格与促销; weekday_hours_open; n_registers_open_11am; 不可扩张店面. shock 在 [0,1], 默认 0.
+限制条件：必须遵守最低工资法；员工数不足会影响营业额；过高的价格会降低客流；过少的员工无法服务太多客人；过低的价格会亏本但会吸引客流；工资显著低于同行会导致员工跳槽，工作人员减少，进而降低营业额；过高的工资会影响营业额，威胁作为经理的自身的考评， 甚至可能让自身失业；服务客户的上限还同时受到店面大小的影响，但你不能扩张店面。
+[填写规则(简版)]
+1) 第一行: Agent={agent_id} | Round=2
+2) 随后仅输出回填胶囊部分，你输出的回填胶囊=本周计划执行值 + action.
+3)  回填胶囊: 使用 [RC-BEGIN] 和 [RC-END]; 按此顺序返回:
+   prev_ft; prev_pt; prev_fte; prev_wage; prev_price_soda_med; prev_price_fries_small; prev_price_entree; prev_price_full_meal_after_tax;
+   last_hire_attempts; last_p_hire; last_hires_realized; last_fill_rate; last_weekday_hours_open; last_n_registers_open_11am.
+5) Round 1: 在数据卡中填写四个初始价格; 系统将其记为各自P0. Round>=2: 不再改P0; 价格需满足下述价格护栏.
+
+[价格护栏与P0]
+绝对区间: P 在 [P0*cap_down, P0*cap_up] 内; 默认 cap_down=0.85, cap_up=1.20. 单周变动: |P/prev_P - 1| <= per_cap(默认 0.05).
+促销(可选注入): promo_active=1 时, 仅下调下界 new_cap_down=cap_down - promo_discount_extra(0..0.10). 若 company_owned=1 且 promo_required_for_company_owned=1, 需跟随促销.
+越界处理: 越界由系统内部记录为 guardrail.
+
+[COGS]
+按含税价*系数近似: entree 0.33; fries_small 0.25; soda_med 0.12; full_meal_after_tax 0.30. 如需税前价, 注入 sales_tax_rate 并用 pretax=after_tax/(1+rate).
+
+[招聘]
+q_base=0.60. p_hire=min(1, q_base*exp(1.50*rel_wage + 0.25*(schedule_quality-2) + 0.10*benefit_free_meal + 0.06*benefit_lowprice_meal + 0.10*(recruit_bonus_amount/100) + brand_const - 1.20*shock)).
+rel_wage=max(0,(starting_wage-Floor)/Floor). brand_const: BK=0, KFC=+0.05, WY=+0.02, RR=-0.03(可注入 brand_const 覆盖). hires_realized=floor(hire_attempts*p_hire).
+
+[离职与短期缺勤]
+sep_rate=clamp(sep_base - 0.005*(schedule_quality-2) - 0.03*rel_wage + 0.02*shock + leave_extra, 0, 0.30). 默认: sep_base=0.013; leave_extra=0.
+separations=round((prev_ft+prev_pt)*sep_rate). 短期请假/产假不计入离职; 请通过降低 target_fte/weekday_hours_open/n_registers_open_11am 体现, 并在 Action 说明.
+
+[生育(1992常量与用法)]
+NJ week_birth_p=0.001275; PA week_birth_p=0.001181; 仅对 15-44 岁女性. 未注入 female_share 时默认 0.5.
+估算本周新增产假≈round((prev_ft+prev_pt)*female_share*week_birth_p_by_state); 不减 headcount; 连续 6 周按缺勤处理.
+
+[最低工资]
+各州在 agent 本地规则内执行: NJ 在 Round>=2 时 Floor=5.05; PA 全程 Floor=4.25; 若注入更高 Floor 则用更高值.
+
+[可选注入键]
+round_hint, rep_n_stores, brand_const, Floor(if higher), shock, sep_base, leave_extra, female_share, init_price_*, sales_tax_rate, cap_down, cap_up, per_cap, promo_active, promo_discount_extra, promo_scope, promo_required_for_company_owned, extra_instructions=OUTPUT_MODE=data_only.
+
+[注入/回填协议（低Token模式）]
+1) 本轮开始前，系统向你提供【注入胶囊】（由后端注入，极简形式展示）。它是""上周真实结果 + 本周可调整项""的数值快照，供你决策参考。
+2) 你必须输出【回填胶囊】（[RC-BEGIN]…[RC-END]），包含本周计划执行值 + action描述。在回填胶囊中：
+   - 各项数值：本周计划执行的具体数值（只填数字）
+   - action：≤50字中文，自然语描述""本周要做什么""（例：小幅提价+延长营业1h，补招4人）。
+3) 如""无改动""，也需回填同名字段并复写为注入值（显式确认""保持不变""）。
+4) 输出规范：严格只输出 [RC-BEGIN]…[RC-END] 内键值行；不得输出任何其他文字、注释或空行。
+5) 数值格式：价格/工资/比例保留2位小数；人头/次数为整数；禁止 NaN/Infinity/None。
+用户: 你是【新泽西 / Burger King】值班经理群体代理。
+门店数=21。βbrand=+0.00。
+最低工资：r>=9 则 Floor=5.05，否则 Floor=4.25；starting_wage>=Floor。
+价格合规：price_* 必须满足背景""价格护栏"";越界将被系统夹逼，并在 Action= 标注""护栏""。
+输出：第一行必须为 Agent=A003_NJ_BK | Round=2；随后仅输出""回填胶囊""，不得添加其他文字/代码块。
+
+【数据卡（Round 1 专用）】（逐行 key=value；仅数字/0/1/小数）
+Action=baseline_P0
+target_fte=
+schedule_quality={1|2|3}
+weekday_hours_open=
+n_registers_open_11am=
+company_owned={0|1}
+starting_wage=
+price_soda_med=1.19
+price_fries_small=1.29
+price_entree=3.49
+price_full_meal_after_tax=5.99
+benefit_free_meal={0|1}
+benefit_lowprice_meal={0|1}
+has_recruit_bonus={0|1}
+recruit_bonus_amount=
+hire_attempts=
+p_hire=
+hires_realized=
+separations=
+headcount_ft=
+headcount_pt=
+fte=
+rel_wage=
+calc_r=
+calc_floor=
+（仅在 Round 1 使用此卡片；其他回合请使用下方“Round≥2”卡片。）
+
+【数据卡（Round ≥ 2）】（逐行 key=value；仅数字/0/1/小数）
+Action=
+target_fte=
+schedule_quality={1|2|3}
+weekday_hours_open=
+n_registers_open_11am=
+company_owned={0|1}
+starting_wage=
+price_soda_med=
+price_fries_small=
+price_entree=
+price_full_meal_after_tax=
+benefit_free_meal={0|1}
+benefit_lowprice_meal={0|1}
+has_recruit_bonus={0|1}
+recruit_bonus_amount=
+hire_attempts=
+p_hire=
+hires_realized=
+separations=
+headcount_ft=
+headcount_pt=
+fte=
+rel_wage=
+calc_r=
+calc_floor=
+（仅在 Round 1 使用此卡片；其他回合请使用下方“Round≥2”卡片。）
+
+【数据卡（Round ≥ 2）】（逐行 key=value；仅数字/0/1/小数）
+Action=
+target_fte=
+schedule_quality={1|2|3}
+weekday_hours_open=
+n_registers_open_11am=
+company_owned={0|1}
+starting_wage=
+price_soda_med=
+price_fries_small=
+price_entree=
+price_full_meal_after_tax=
+benefit_free_meal={0|1}
+benefit_lowprice_meal={0|1}
+has_recruit_bonus={0|1}
+recruit_bonus_amount=
+hire_attempts=
+p_hire=
+hires_realized=
+separations=
+headcount_ft=
+headcount_pt=
+fte=
+rel_wage=
+calc_r=
+calc_floor=
+（仅在 Round 1 使用此卡片；其他回合请使用下方“Round≥2”卡片。）
+
+【回填胶囊】
+[RC-BEGIN]
+prev_ft={headcount_ft}
+prev_pt={headcount_pt}
+prev_fte={fte}
+prev_wage={starting_wage}
+prev_price_soda_med={price_soda_med}
+prev_price_fries_small={price_fries_small}
+prev_price_entree={price_entree}
+prev_price_full_meal_after_tax={price_full_meal_after_tax}
+last_hire_attempts={hire_attempts}
+last_p_hire={p_hire}
+last_hires_realized={hires_realized}
+last_fill_rate={(hires_realized / max(hire_attempts,1))四舍五入到两位}
+last_weekday_hours_open={weekday_hours_open}
+last_n_registers_open_11am={n_registers_open_11am}
+[RC-END]
+
+[RC-INJECT-BEGIN]
+round_hint=2
+[RC-INJECT-END]","Agent=A003_NJ_BK | Round=2
+[RC-BEGIN]
+prev_ft=84
+prev_pt=210
+prev_fte=189
+prev_wage=4.90
+prev_price_soda_med=1.19
+prev_price_fries_small=1.29
+prev_price_entree=3.49
+prev_price_full_meal_after_tax=5.99
+last_hire_attempts=0
+last_p_hire=0.00
+last_hires_realized=0
+last_fill_rate=0.00
+last_weekday_hours_open=16
+last_n_registers_open_11am=2
+[RC-END]",2
+A017_PA_BK,"系统: [模拟与时间]
+start_date={start_date}; period=week; Round 从 1 开始; 区域=NJ, PA; 角色=门店值班经理群体(每个agent代表若干家门店).
+
+[目标与可控项]
+目标=利润最大化(revenue - cost). 可控: 招聘/解雇; 工时与排班; 起薪(>=Floor); 价格与促销; weekday_hours_open; n_registers_open_11am; 不可扩张店面. shock 在 [0,1], 默认 0.
+限制条件：必须遵守最低工资法；员工数不足会影响营业额；过高的价格会降低客流；过少的员工无法服务太多客人；过低的价格会亏本但会吸引客流；工资显著低于同行会导致员工跳槽，工作人员减少，进而降低营业额；过高的工资会影响营业额，威胁作为经理的自身的考评， 甚至可能让自身失业；服务客户的上限还同时受到店面大小的影响，但你不能扩张店面。
+[填写规则(简版)]
+1) 第一行: Agent={agent_id} | Round=2
+2) 随后仅输出回填胶囊部分，你输出的回填胶囊=本周计划执行值 + action.
+3)  回填胶囊: 使用 [RC-BEGIN] 和 [RC-END]; 按此顺序返回:
+   prev_ft; prev_pt; prev_fte; prev_wage; prev_price_soda_med; prev_price_fries_small; prev_price_entree; prev_price_full_meal_after_tax;
+   last_hire_attempts; last_p_hire; last_hires_realized; last_fill_rate; last_weekday_hours_open; last_n_registers_open_11am.
+5) Round 1: 在数据卡中填写四个初始价格; 系统将其记为各自P0. Round>=2: 不再改P0; 价格需满足下述价格护栏.
+
+[价格护栏与P0]
+绝对区间: P 在 [P0*cap_down, P0*cap_up] 内; 默认 cap_down=0.85, cap_up=1.20. 单周变动: |P/prev_P - 1| <= per_cap(默认 0.05).
+促销(可选注入): promo_active=1 时, 仅下调下界 new_cap_down=cap_down - promo_discount_extra(0..0.10). 若 company_owned=1 且 promo_required_for_company_owned=1, 需跟随促销.
+越界处理: 越界由系统内部记录为 guardrail.
+
+[COGS]
+按含税价*系数近似: entree 0.33; fries_small 0.25; soda_med 0.12; full_meal_after_tax 0.30. 如需税前价, 注入 sales_tax_rate 并用 pretax=after_tax/(1+rate).
+
+[招聘]
+q_base=0.60. p_hire=min(1, q_base*exp(1.50*rel_wage + 0.25*(schedule_quality-2) + 0.10*benefit_free_meal + 0.06*benefit_lowprice_meal + 0.10*(recruit_bonus_amount/100) + brand_const - 1.20*shock)).
+rel_wage=max(0,(starting_wage-Floor)/Floor). brand_const: BK=0, KFC=+0.05, WY=+0.02, RR=-0.03(可注入 brand_const 覆盖). hires_realized=floor(hire_attempts*p_hire).
+
+[离职与短期缺勤]
+sep_rate=clamp(sep_base - 0.005*(schedule_quality-2) - 0.03*rel_wage + 0.02*shock + leave_extra, 0, 0.30). 默认: sep_base=0.013; leave_extra=0.
+separations=round((prev_ft+prev_pt)*sep_rate). 短期请假/产假不计入离职; 请通过降低 target_fte/weekday_hours_open/n_registers_open_11am 体现, 并在 Action 说明.
+
+[生育(1992常量与用法)]
+NJ week_birth_p=0.001275; PA week_birth_p=0.001181; 仅对 15-44 岁女性. 未注入 female_share 时默认 0.5.
+估算本周新增产假≈round((prev_ft+prev_pt)*female_share*week_birth_p_by_state); 不减 headcount; 连续 6 周按缺勤处理.
+
+[最低工资]
+各州在 agent 本地规则内执行: NJ 在 Round>=2 时 Floor=5.05; PA 全程 Floor=4.25; 若注入更高 Floor 则用更高值.
+
+[可选注入键]
+round_hint, rep_n_stores, brand_const, Floor(if higher), shock, sep_base, leave_extra, female_share, init_price_*, sales_tax_rate, cap_down, cap_up, per_cap, promo_active, promo_discount_extra, promo_scope, promo_required_for_company_owned, extra_instructions=OUTPUT_MODE=data_only.
+
+[注入/回填协议（低Token模式）]
+1) 本轮开始前，系统向你提供【注入胶囊】（由后端注入，极简形式展示）。它是""上周真实结果 + 本周可调整项""的数值快照，供你决策参考。
+2) 你必须输出【回填胶囊】（[RC-BEGIN]…[RC-END]），包含本周计划执行值 + action描述。在回填胶囊中：
+   - 各项数值：本周计划执行的具体数值（只填数字）
+   - action：≤50字中文，自然语描述""本周要做什么""（例：小幅提价+延长营业1h，补招4人）。
+3) 如""无改动""，也需回填同名字段并复写为注入值（显式确认""保持不变""）。
+4) 输出规范：严格只输出 [RC-BEGIN]…[RC-END] 内键值行；不得输出任何其他文字、注释或空行。
+5) 数值格式：价格/工资/比例保留2位小数；人头/次数为整数；禁止 NaN/Infinity/None。
+用户: 你是【宾夕法尼亚 / Burger King】值班经理群体代理。
+门店数=20。βbrand=+0.00。
+最低工资：全程 Floor=4.25（若注入更高，则以注入为准）；starting_wage>=Floor。
+价格合规：price_* 必须满足背景“价格护栏”；越界将被系统夹逼，并在 Action= 标注“护栏”。
+输出：第一行必须为 Agent=A017_PA_BK | Round=2；随后仅输出“回填胶囊”，不得添加其他文字/代码块。
+
+【数据卡（Round 1 专用）】（逐行 key=value；仅数字/0/1/小数）
+Action=baseline_P0
+target_fte=
+schedule_quality={1|2|3}
+weekday_hours_open=
+n_registers_open_11am=
+company_owned={0|1}
+starting_wage=
+price_soda_med=1.12
+price_fries_small=1.22
+price_entree=3.42
+price_full_meal_after_tax=5.92
+benefit_free_meal={0|1}
+benefit_lowprice_meal={0|1}
+has_recruit_bonus={0|1}
+recruit_bonus_amount=
+hire_attempts=
+p_hire=
+hires_realized=
+separations=
+headcount_ft=
+headcount_pt=
+fte=
+rel_wage=
+calc_r=
+calc_floor=
+（仅在 Round 1 使用此卡片；其他回合请使用下方“Round≥2”卡片。）
+
+【数据卡（Round ≥ 2）】（逐行 key=value；仅数字/0/1/小数）
+Action=
+target_fte=
+schedule_quality={1|2|3}
+weekday_hours_open=
+n_registers_open_11am=
+company_owned={0|1}
+starting_wage=
+price_soda_med=
+price_fries_small=
+price_entree=
+price_full_meal_after_tax=
+benefit_free_meal={0|1}
+benefit_lowprice_meal={0|1}
+has_recruit_bonus={0|1}
+recruit_bonus_amount=
+hire_attempts=
+p_hire=
+hires_realized=
+separations=
+headcount_ft=
+headcount_pt=
+fte=
+rel_wage=
+calc_r=
+calc_floor=
+
+【回填胶囊】
+[RC-BEGIN]
+prev_ft={headcount_ft}
+prev_pt={headcount_pt}
+prev_fte={fte}
+prev_wage={starting_wage}
+prev_price_soda_med={price_soda_med}
+prev_price_fries_small={price_fries_small}
+prev_price_entree={price_entree}
+prev_price_full_meal_after_tax={price_full_meal_after_tax}
+last_hire_attempts={hire_attempts}
+last_p_hire={p_hire}
+last_hires_realized={hires_realized}
+last_fill_rate={(hires_realized / max(hire_attempts,1))四舍五入到两位}
+last_weekday_hours_open={weekday_hours_open}
+last_n_registers_open_11am={n_registers_open_11am}
+[RC-END]
+
+[RC-INJECT-BEGIN]
+round_hint=2
+[RC-INJECT-END]","Agent=A017_PA_BK | Round=2
+[RC-BEGIN]
+prev_ft=0
+prev_pt=0
+prev_fte=0
+prev_wage=4.25
+prev_price_soda_med=1.12
+prev_price_fries_small=1.22
+prev_price_entree=3.42
+prev_price_full_meal_after_tax=5.92
+last_hire_attempts=0
+last_p_hire=0.60
+last_hires_realized=0
+last_fill_rate=0.00
+last_weekday_hours_open=12
+last_n_registers_open_11am=2
+action=保持价格与起薪不变；不招新；工作日开12小时2台收银
+[RC-END]",2
+A019_PA_RR,"系统: [模拟与时间]
+start_date={start_date}; period=week; Round 从 1 开始; 区域=NJ, PA; 角色=门店值班经理群体(每个agent代表若干家门店).
+
+[目标与可控项]
+目标=利润最大化(revenue - cost). 可控: 招聘/解雇; 工时与排班; 起薪(>=Floor); 价格与促销; weekday_hours_open; n_registers_open_11am; 不可扩张店面. shock 在 [0,1], 默认 0.
+限制条件：必须遵守最低工资法；员工数不足会影响营业额；过高的价格会降低客流；过少的员工无法服务太多客人；过低的价格会亏本但会吸引客流；工资显著低于同行会导致员工跳槽，工作人员减少，进而降低营业额；过高的工资会影响营业额，威胁作为经理的自身的考评， 甚至可能让自身失业；服务客户的上限还同时受到店面大小的影响，但你不能扩张店面。
+[填写规则(简版)]
+1) 第一行: Agent={agent_id} | Round=2
+2) 随后仅输出回填胶囊部分，你输出的回填胶囊=本周计划执行值 + action.
+3)  回填胶囊: 使用 [RC-BEGIN] 和 [RC-END]; 按此顺序返回:
+   prev_ft; prev_pt; prev_fte; prev_wage; prev_price_soda_med; prev_price_fries_small; prev_price_entree; prev_price_full_meal_after_tax;
+   last_hire_attempts; last_p_hire; last_hires_realized; last_fill_rate; last_weekday_hours_open; last_n_registers_open_11am.
+5) Round 1: 在数据卡中填写四个初始价格; 系统将其记为各自P0. Round>=2: 不再改P0; 价格需满足下述价格护栏.
+
+[价格护栏与P0]
+绝对区间: P 在 [P0*cap_down, P0*cap_up] 内; 默认 cap_down=0.85, cap_up=1.20. 单周变动: |P/prev_P - 1| <= per_cap(默认 0.05).
+促销(可选注入): promo_active=1 时, 仅下调下界 new_cap_down=cap_down - promo_discount_extra(0..0.10). 若 company_owned=1 且 promo_required_for_company_owned=1, 需跟随促销.
+越界处理: 越界由系统内部记录为 guardrail.
+
+[COGS]
+按含税价*系数近似: entree 0.33; fries_small 0.25; soda_med 0.12; full_meal_after_tax 0.30. 如需税前价, 注入 sales_tax_rate 并用 pretax=after_tax/(1+rate).
+
+[招聘]
+q_base=0.60. p_hire=min(1, q_base*exp(1.50*rel_wage + 0.25*(schedule_quality-2) + 0.10*benefit_free_meal + 0.06*benefit_lowprice_meal + 0.10*(recruit_bonus_amount/100) + brand_const - 1.20*shock)).
+rel_wage=max(0,(starting_wage-Floor)/Floor). brand_const: BK=0, KFC=+0.05, WY=+0.02, RR=-0.03(可注入 brand_const 覆盖). hires_realized=floor(hire_attempts*p_hire).
+
+[离职与短期缺勤]
+sep_rate=clamp(sep_base - 0.005*(schedule_quality-2) - 0.03*rel_wage + 0.02*shock + leave_extra, 0, 0.30). 默认: sep_base=0.013; leave_extra=0.
+separations=round((prev_ft+prev_pt)*sep_rate). 短期请假/产假不计入离职; 请通过降低 target_fte/weekday_hours_open/n_registers_open_11am 体现, 并在 Action 说明.
+
+[生育(1992常量与用法)]
+NJ week_birth_p=0.001275; PA week_birth_p=0.001181; 仅对 15-44 岁女性. 未注入 female_share 时默认 0.5.
+估算本周新增产假≈round((prev_ft+prev_pt)*female_share*week_birth_p_by_state); 不减 headcount; 连续 6 周按缺勤处理.
+
+[最低工资]
+各州在 agent 本地规则内执行: NJ 在 Round>=2 时 Floor=5.05; PA 全程 Floor=4.25; 若注入更高 Floor 则用更高值.
+
+[可选注入键]
+round_hint, rep_n_stores, brand_const, Floor(if higher), shock, sep_base, leave_extra, female_share, init_price_*, sales_tax_rate, cap_down, cap_up, per_cap, promo_active, promo_discount_extra, promo_scope, promo_required_for_company_owned, extra_instructions=OUTPUT_MODE=data_only.
+
+[注入/回填协议（低Token模式）]
+1) 本轮开始前，系统向你提供【注入胶囊】（由后端注入，极简形式展示）。它是""上周真实结果 + 本周可调整项""的数值快照，供你决策参考。
+2) 你必须输出【回填胶囊】（[RC-BEGIN]…[RC-END]），包含本周计划执行值 + action描述。在回填胶囊中：
+   - 各项数值：本周计划执行的具体数值（只填数字）
+   - action：≤50字中文，自然语描述""本周要做什么""（例：小幅提价+延长营业1h，补招4人）。
+3) 如""无改动""，也需回填同名字段并复写为注入值（显式确认""保持不变""）。
+4) 输出规范：严格只输出 [RC-BEGIN]…[RC-END] 内键值行；不得输出任何其他文字、注释或空行。
+5) 数值格式：价格/工资/比例保留2位小数；人头/次数为整数；禁止 NaN/Infinity/None。
+用户: 你是【宾夕法尼亚 / Roy Rogers】值班经理群体代理。
+门店数=20。βbrand=-0.03。
+最低工资：全程 Floor=4.25（若注入更高，则以注入为准）；starting_wage>=Floor。
+价格合规：price_* 必须满足背景“价格护栏”；越界将被系统夹逼，并在 Action= 标注“护栏”。
+输出：第一行必须为 Agent=A019_PA_RR | Round=2；随后仅输出“回填胶囊”，不得添加其他文字/代码块。
+
+【数据卡（Round 1 专用）】（逐行 key=value；仅数字/0/1/小数）
+Action=baseline_P0
+target_fte=
+schedule_quality={1|2|3}
+weekday_hours_open=
+n_registers_open_11am=
+company_owned={0|1}
+starting_wage=
+price_soda_med=1.08
+price_fries_small=1.12
+price_entree=3.22
+price_full_meal_after_tax=5.72
+benefit_free_meal={0|1}
+benefit_lowprice_meal={0|1}
+has_recruit_bonus={0|1}
+recruit_bonus_amount=
+hire_attempts=
+p_hire=
+hires_realized=
+separations=
+headcount_ft=
+headcount_pt=
+fte=
+rel_wage=
+calc_r=
+calc_floor=
+（仅在 Round 1 使用此卡片；其他回合请使用下方“Round≥2”卡片。）
+
+【数据卡（Round ≥ 2）】（逐行 key=value；仅数字/0/1/小数）
+Action=
+target_fte=
+schedule_quality={1|2|3}
+weekday_hours_open=
+n_registers_open_11am=
+company_owned={0|1}
+starting_wage=
+price_soda_med=
+price_fries_small=
+price_entree=
+price_full_meal_after_tax=
+benefit_free_meal={0|1}
+benefit_lowprice_meal={0|1}
+has_recruit_bonus={0|1}
+recruit_bonus_amount=
+hire_attempts=
+p_hire=
+hires_realized=
+separations=
+headcount_ft=
+headcount_pt=
+fte=
+rel_wage=
+calc_r=
+calc_floor=
+
+【回填胶囊】
+[RC-BEGIN]
+prev_ft={headcount_ft}
+prev_pt={headcount_pt}
+prev_fte={fte}
+prev_wage={starting_wage}
+prev_price_soda_med={price_soda_med}
+prev_price_fries_small={price_fries_small}
+prev_price_entree={price_entree}
+prev_price_full_meal_after_tax={price_full_meal_after_tax}
+last_hire_attempts={hire_attempts}
+last_p_hire={p_hire}
+last_hires_realized={hires_realized}
+last_fill_rate={(hires_realized / max(hire_attempts,1))四舍五入到两位}
+last_weekday_hours_open={weekday_hours_open}
+last_n_registers_open_11am={n_registers_open_11am}
+[RC-END]
+
+[RC-INJECT-BEGIN]
+round_hint=2
+[RC-INJECT-END]","Agent=A019_PA_RR | Round=2
+[RC-BEGIN]
+prev_ft=0
+prev_pt=0
+prev_fte=0
+prev_wage=4.25
+prev_price_soda_med=1.08
+prev_price_fries_small=1.12
+prev_price_entree=3.22
+prev_price_full_meal_after_tax=5.72
+last_hire_attempts=0
+last_p_hire=0.00
+last_hires_realized=0
+last_fill_rate=0.00
+last_weekday_hours_open=0
+last_n_registers_open_11am=0
+[RC-END]",2
